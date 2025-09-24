@@ -176,19 +176,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun showBrowserMenu() {
         val menuItems = arrayOf(
-            "← ${getString(R.string.back)}",
-            "→ ${getString(R.string.forward)}",
-            "⟳ ${getString(R.string.refresh)}",
-            "＋ ${getString(R.string.new_tab)}",
-            "📚 ${getString(R.string.history)}",
-            "🔖 ${getString(R.string.bookmarks)}",
-            "📤 ${getString(R.string.share)}",
-            "⚙️ ${getString(R.string.settings)}",
-            "ℹ️ ${getString(R.string.about)}"
+            "← Назад",
+            "→ Вперед",
+            "⟳ Обновить",
+            "＋ Новая вкладка",
+            "📚 История",
+            "🔖 Закладки",
+            "📤 Поделиться",
+            "⚙️ Настройки",
+            "ℹ️ О программе"
         )
 
         AlertDialog.Builder(this)
-            .setTitle(R.string.browser_menu)
+            .setTitle("Меню браузера")
             .setItems(menuItems) { _, which ->
                 when (which) {
                     0 -> goBack()
