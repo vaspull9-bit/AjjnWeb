@@ -1,6 +1,26 @@
 <resources>
     <string name="app_name">AjjnWeb</string>
-    <string name="title_home">Браузер</string>
-    <string name="title_dashboard">История</string>
-    <string name="title_notifications">Закладки</string>
+    <string name="search_hint">Поиск или введите название сайта</string>
+    <string name="menu">Меню</string>
+    <string name="browser_menu">Меню браузера</string>
+    <string name="new_tab">Новая вкладка</string>
+    <string name="history">История</string>
+    <string name="bookmarks">Закладки</string>
+    <string name="share">Поделиться</string>
+    <string name="find_on_page">Найти на странице</string>
+    <string name="settings">Настройки</string>
+    <string name="about">О программе</string>
+    <string name="clear_history">Очистить историю</string>
+    <string name="cancel">Отмена</string>
+    <string name="add_bookmark">Добавить закладку</string>
+    <string name="no_bookmarks">Нет закладок</string>
+    <string name="empty_history">История пуста</string>
+    <string name="cache_cleared">Кэш очищен</string>
+    <string name="history_cleared">История очищена</string>
+    <string name="cookies_cleared">Cookies очищены</string>
+    <string name="incognito_mode">Режим инкогнито</string>
+    <string name="about_message">VShargin (C) 2025. vaspull9@gmail.com\nAjjnWeb v1.1.8\nБраузер с интерфейсом Chrome и жестовой навигацией</string>
+    <string name="back">Назад</string>
+    <string name="forward">Вперед</string>
+    <string name="refresh">Обновить</string>
 </resources>

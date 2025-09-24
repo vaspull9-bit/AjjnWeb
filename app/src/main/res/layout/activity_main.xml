@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
         android:background="?attr/colorPrimary"
-        android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar">
+        android:theme="@style/ThemeOverlay.AppCompat.Light">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -17,37 +17,13 @@
             android:orientation="horizontal"
             android:padding="8dp">
 
-            <ImageButton
-                android:id="@+id/backButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_arrow_back_24"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Назад" />
-
-            <ImageButton
-                android:id="@+id/forwardButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_arrow_forward_24"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Вперед" />
-
-            <ImageButton
-                android:id="@+id/refreshButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_refresh_24"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Обновить" />
-
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/urlInputLayout"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginHorizontal="4dp"
-                android:hint="Поиск или введите название сайта">
+                android:layout_marginEnd="8dp"
+                android:hint="">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/urlEditText"
@@ -55,18 +31,11 @@
                     android:layout_height="wrap_content"
                     android:imeOptions="actionGo"
                     android:inputType="text"
-                    android:hint="Поиск или введите название сайта"
-                    android:singleLine="true" />
+                    android:hint="@string/search_hint"
+                    android:singleLine="true"
+                    android:maxLines="1" />
 
             </com.google.android.material.textfield.TextInputLayout>
-
-            <ImageButton
-                android:id="@+id/goButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:src="@drawable/ic_search_24"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Перейти" />
 
             <ImageButton
                 android:id="@+id/menuButton"
@@ -74,7 +43,7 @@
                 android:layout_height="40dp"
                 android:src="@drawable/ic_menu_24"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Меню" />
+                android:contentDescription="@string/menu" />
 
         </LinearLayout>
 

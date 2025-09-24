@@ -5,29 +5,26 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.os.Bundle
-import android.os.Environment
-import android.print.PrintAttributes
-import android.print.PrintManager
-import android.view.Menu
-import android.view.MenuItem
+// import android.print.PrintManager
 import android.view.View
 import android.webkit.*
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 import com.example.ajjnweb.databinding.ActivityMainBinding
-import java.io.File
-import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.*
+import java.net.URLEncoder
+// import android.content.Context
+import android.view.inputmethod.InputMethodManager
+import androidx.core.content.edit
+import android.view.MotionEvent
+
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
-    private val tabs = mutableListOf<WebView>()
-    private var currentTabIndex = 0
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,7 +35,25 @@ class MainActivity : AppCompatActivity() {
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
         setupWebView()
         setupClickListeners()
+        setupBackPressedHandler() // Добавляем обработчик назад
         loadHomePage()
+    }
+
+    private fun setupBackPressedHandler() {
+        val onBackPressedCallback = object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (binding.webView.canGoBack()) {
+                    binding.webView.goBack()
+                } else {
+                    // Если нельзя идти назад в WebView, разрешаем стандартное поведение
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+
+        onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -56,7 +71,6 @@ class MainActivity : AppCompatActivity() {
             javaScriptCanOpenWindowsAutomatically = true
             allowFileAccess = true
             allowContentAccess = true
-            databaseEnabled = true
             cacheMode = WebSettings.LOAD_DEFAULT
         }
 
@@ -69,7 +83,6 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 binding.progressBar.visibility = View.GONE
                 binding.urlEditText.setText(url)
-                updateNavigationButtons()
                 saveToHistory(url ?: "", view?.title ?: "")
             }
 
@@ -95,35 +108,24 @@ class MainActivity : AppCompatActivity() {
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 supportActionBar?.title = title ?: "AjjnWeb"
             }
-
-            override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
-                val newWebView = WebView(this@MainActivity)
-                setupWebViewSettings(newWebView)
-                val transport = resultMsg?.obj as WebView.WebViewTransport
-                transport.webView = newWebView
-                resultMsg.sendToTarget()
-                return true
-            }
-        }
-
-        tabs.add(webView)
-    }
-
-    private fun setupWebViewSettings(webView: WebView) {
-        with(webView.settings) {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            useWideViewPort = true
-            loadWithOverviewMode = true
         }
     }
 
     private fun setupClickListeners() {
-        binding.backButton.setOnClickListener { goBack() }
-        binding.forwardButton.setOnClickListener { goForward() }
-        binding.refreshButton.setOnClickListener { refresh() }
-        binding.goButton.setOnClickListener { loadUrl() }
         binding.menuButton.setOnClickListener { showBrowserMenu() }
+
+        // Правильная обработка фокуса для hint
+        binding.urlEditText.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                // При фокусе убираем hint полностью
+                binding.urlEditText.hint = ""
+            } else {
+                // При потере фокуса, если поле пустое - показываем hint
+                if (binding.urlEditText.text.toString().isEmpty()) {
+                    binding.urlEditText.hint = getString(R.string.search_hint)
+                }
+            }
+        }
 
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
@@ -133,98 +135,99 @@ class MainActivity : AppCompatActivity() {
                 false
             }
         }
+
+        // Обработка клика по полю ввода - ставим курсор в конец и убираем hint
+        binding.urlEditText.setOnClickListener {
+            binding.urlEditText.hint = "" // Убираем hint при клике
+            binding.urlEditText.setSelection(binding.urlEditText.text?.length ?: 0)
+        }
     }
 
     private fun loadUrl(url: String? = null) {
         var inputText = url ?: binding.urlEditText.text.toString().trim()
 
-        if (inputText.isEmpty()) return
+        if (inputText.isEmpty()) {
+            // Если поле пустое, загружаем стартовую страницу
+            inputText = "https://www.google.com"
+        }
 
         if (!inputText.startsWith("http://") && !inputText.startsWith("https://") && !inputText.startsWith("file://")) {
             inputText = if (inputText.contains(".")) {
                 "https://$inputText"
             } else {
-                "https://www.google.com/search?q=${java.net.URLEncoder.encode(inputText, "UTF-8")}"
+                "https://www.google.com/search?q=${URLEncoder.encode(inputText, "UTF-8")}"
             }
         }
 
-        currentWebView().loadUrl(inputText)
+        binding.webView.loadUrl(inputText)
         hideKeyboard()
-    }
 
-    private fun goBack() {
-        if (currentWebView().canGoBack()) {
-            currentWebView().goBack()
+        // После загрузки URL восстанавливаем hint если нужно
+        if (binding.urlEditText.text.toString().isEmpty()) {
+            binding.urlEditText.hint = getString(R.string.search_hint)
         }
-        updateNavigationButtons()
-    }
-
-    private fun goForward() {
-        if (currentWebView().canGoForward()) {
-            currentWebView().goForward()
-        }
-        updateNavigationButtons()
-    }
-
-    private fun refresh() {
-        currentWebView().reload()
-    }
-
-    private fun updateNavigationButtons() {
-        binding.backButton.isEnabled = currentWebView().canGoBack()
-        binding.forwardButton.isEnabled = currentWebView().canGoForward()
     }
 
     private fun hideKeyboard() {
         binding.urlEditText.clearFocus()
-        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(binding.urlEditText.windowToken, 0)
     }
 
     private fun showBrowserMenu() {
         val menuItems = arrayOf(
-            "Новая вкладка",
-            "Новое окно",
-            "История",
-            "Закладки",
-            "Скачать страницу",
-            "Поделиться",
-            "Найти на странице",
-            "Настройки",
-            "Печать",
-            "О программе"
+            "← ${getString(R.string.back)}",
+            "→ ${getString(R.string.forward)}",
+            "⟳ ${getString(R.string.refresh)}",
+            "＋ ${getString(R.string.new_tab)}",
+            "📚 ${getString(R.string.history)}",
+            "🔖 ${getString(R.string.bookmarks)}",
+            "📤 ${getString(R.string.share)}",
+            "⚙️ ${getString(R.string.settings)}",
+            "ℹ️ ${getString(R.string.about)}"
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Меню браузера")
+            .setTitle(R.string.browser_menu)
             .setItems(menuItems) { _, which ->
                 when (which) {
-                    0 -> newTab()
-                    1 -> newWindow()
-                    2 -> showHistory()
-                    3 -> showBookmarks()
-                    4 -> downloadPage()
-                    5 -> sharePage()
-                    6 -> findOnPage()
+                    0 -> goBack()
+                    1 -> goForward()
+                    2 -> refresh()
+                    3 -> newTab()
+                    4 -> showHistory()
+                    5 -> showBookmarks()
+                    6 -> sharePage()
                     7 -> showSettings()
-                    8 -> printPage()
-                    9 -> showAbout()
+                    8 -> showAbout()
                 }
             }
             .show()
     }
 
-    private fun newTab() {
-        val newWebView = WebView(this)
-        setupWebViewSettings(newWebView)
-
-        // Создаем систему вкладок (упрощенная версия)
-        Toast.makeText(this, "Новая вкладка", Toast.LENGTH_SHORT).show()
-        loadUrl("https://www.google.com")
+    private fun goBack() {
+        if (binding.webView.canGoBack()) {
+            binding.webView.goBack()
+        } else {
+            Toast.makeText(this, "Нельзя вернуться назад", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun newWindow() {
-        Toast.makeText(this, "Новое окно", Toast.LENGTH_SHORT).show()
+    private fun goForward() {
+        if (binding.webView.canGoForward()) {
+            binding.webView.goForward()
+        } else {
+            Toast.makeText(this, "Нельзя перейти вперед", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refresh() {
+        binding.webView.reload()
+    }
+
+    private fun newTab() {
+        Toast.makeText(this, "Новая вкладка", Toast.LENGTH_SHORT).show()
+        loadUrl("https://www.google.com")
     }
 
     private fun showHistory() {
@@ -232,14 +235,16 @@ class MainActivity : AppCompatActivity() {
         val urls = history.map { it.first }.toTypedArray()
 
         AlertDialog.Builder(this)
-            .setTitle("История")
-            .setItems(urls.takeLast(10).toTypedArray()) { _, which ->
-                loadUrl(history[which].first)
+            .setTitle(R.string.history)
+            .setItems(if (urls.isEmpty()) arrayOf(getString(R.string.empty_history)) else urls.takeLast(10).toTypedArray()) { _, which ->
+                if (history.isNotEmpty()) {
+                    loadUrl(history[which].first)
+                }
             }
-            .setPositiveButton("Очистить историю") { _, _ ->
+            .setPositiveButton(R.string.clear_history) { _, _ ->
                 clearHistory()
             }
-            .setNegativeButton("Отмена", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -248,26 +253,22 @@ class MainActivity : AppCompatActivity() {
         val titles = bookmarks.map { it.first }.toTypedArray()
 
         AlertDialog.Builder(this)
-            .setTitle("Закладки")
-            .setItems(if (titles.isEmpty()) arrayOf("Нет закладок") else titles) { _, which ->
+            .setTitle(R.string.bookmarks)
+            .setItems(if (titles.isEmpty()) arrayOf(getString(R.string.no_bookmarks)) else titles) { _, which ->
                 if (bookmarks.isNotEmpty()) {
                     loadUrl(bookmarks[which].second)
                 }
             }
-            .setPositiveButton("Добавить текущую") { _, _ ->
+            .setPositiveButton(R.string.add_bookmark) { _, _ ->
                 addBookmark()
             }
-            .setNegativeButton("Отмена", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
-    private fun downloadPage() {
-        Toast.makeText(this, "Скачивание страницы", Toast.LENGTH_SHORT).show()
-    }
-
     private fun sharePage() {
-        val url = currentWebView().url ?: ""
-        val title = currentWebView().title ?: ""
+        val url = binding.webView.url ?: ""
+        val title = binding.webView.title ?: ""
 
         if (url.isNotEmpty()) {
             val shareIntent = Intent().apply {
@@ -288,8 +289,7 @@ class MainActivity : AppCompatActivity() {
             "Очистить кэш",
             "Очистить историю",
             "Очистить cookies",
-            "Режим инкогнито",
-            "Блокировка рекламы"
+            "Режим инкогнито"
         )
 
         AlertDialog.Builder(this)
@@ -300,38 +300,37 @@ class MainActivity : AppCompatActivity() {
                     1 -> clearHistory()
                     2 -> clearCookies()
                     3 -> incognitoMode()
-                    4 -> adBlock()
                 }
             }
             .show()
     }
 
-    private fun printPage() {
-        val printManager = getSystemService(PRINT_SERVICE) as PrintManager
-        val jobName = "${currentWebView().title} - Document"
-        printManager.print(jobName, currentWebView().createPrintDocumentAdapter(), null)
+    private fun clearCache() {
+        binding.webView.clearCache(true)
+        WebStorage.getInstance().deleteAllData()
+        Toast.makeText(this, R.string.cache_cleared, Toast.LENGTH_SHORT).show()
     }
 
-    private fun showAbout() {
-        val aboutMessage = "VShargin (C) 2025. vaspull9@gmail.com\nAjjnWeb v1.1.5\nПолнофункциональный браузер"
-        AlertDialog.Builder(this)
-            .setTitle("О программе")
-            .setMessage(aboutMessage)
-            .setPositiveButton("OK", null)
-            .show()
+    private fun clearHistory() {
+        prefs.edit { remove("history") }
+        Toast.makeText(this, R.string.history_cleared, Toast.LENGTH_SHORT).show()
     }
 
-    // Вспомогательные функции
-    private fun currentWebView(): WebView = binding.webView
+    private fun clearCookies() {
+        CookieManager.getInstance().removeAllCookies(null)
+        Toast.makeText(this, R.string.cookies_cleared, Toast.LENGTH_SHORT).show()
+    }
 
-    private fun loadHomePage() {
-        loadUrl("https://www.google.com")
+    private fun incognitoMode() {
+        Toast.makeText(this, "Режим инкогнито", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveToHistory(url: String, title: String) {
-        val history = prefs.getStringSet("history", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
-        history.add("$title|$url|${System.currentTimeMillis()}")
-        prefs.edit().putStringSet("history", history).apply()
+        prefs.edit {
+            val history = prefs.getStringSet("history", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+            history.add("$title|$url|${System.currentTimeMillis()}")
+            putStringSet("history", history)
+        }
     }
 
     private fun getHistory(): List<Pair<String, String>> {
@@ -341,17 +340,14 @@ class MainActivity : AppCompatActivity() {
         } ?: emptyList()
     }
 
-    private fun clearHistory() {
-        prefs.edit().remove("history").apply()
-        Toast.makeText(this, "История очищена", Toast.LENGTH_SHORT).show()
-    }
-
     private fun addBookmark() {
-        val url = currentWebView().url ?: return
-        val title = currentWebView().title ?: "Без названия"
-        val bookmarks = prefs.getStringSet("bookmarks", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
-        bookmarks.add("$title|$url")
-        prefs.edit().putStringSet("bookmarks", bookmarks).apply()
+        val url = binding.webView.url ?: return
+        val title = binding.webView.title ?: "Без названия"
+        prefs.edit {
+            val bookmarks = prefs.getStringSet("bookmarks", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+            bookmarks.add("$title|$url")
+            putStringSet("bookmarks", bookmarks)
+        }
         Toast.makeText(this, "Закладка добавлена", Toast.LENGTH_SHORT).show()
     }
 
@@ -362,30 +358,15 @@ class MainActivity : AppCompatActivity() {
         } ?: emptyList()
     }
 
-    private fun clearCache() {
-        currentWebView().clearCache(true)
-        WebStorage.getInstance().deleteAllData()
-        Toast.makeText(this, "Кэш очищен", Toast.LENGTH_SHORT).show()
+    private fun showAbout() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.about)
+            .setMessage(getString(R.string.about_message))
+            .setPositiveButton("OK", null)
+            .show()
     }
 
-    private fun clearCookies() {
-        CookieManager.getInstance().removeAllCookies(null)
-        Toast.makeText(this, "Cookies очищены", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun incognitoMode() {
-        Toast.makeText(this, "Режим инкогнито", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun adBlock() {
-        Toast.makeText(this, "Блокировка рекламы", Toast.LENGTH_SHORT).show()
-    }
-
-    override fun onBackPressed() {
-        if (currentWebView().canGoBack()) {
-            currentWebView().goBack()
-        } else {
-            super.onBackPressed()
-        }
+    private fun loadHomePage() {
+        loadUrl("https://www.google.com")
     }
 }
