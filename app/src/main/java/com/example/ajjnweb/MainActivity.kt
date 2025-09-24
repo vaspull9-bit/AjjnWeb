@@ -114,19 +114,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
 
-        // Правильная обработка фокуса для hint
-        binding.urlEditText.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                // При фокусе убираем hint полностью
-                binding.urlEditText.hint = ""
-            } else {
-                // При потере фокуса, если поле пустое - показываем hint
-                if (binding.urlEditText.text.toString().isEmpty()) {
-                    binding.urlEditText.hint = getString(R.string.search_hint)
-                }
-            }
-        }
-
+        // ПРОСТАЯ обработка ввода - никаких hint!
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
                 loadUrl()
@@ -136,10 +124,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Обработка клика по полю ввода - ставим курсор в конец и убираем hint
+        // При клике просто фокусируем
         binding.urlEditText.setOnClickListener {
-            binding.urlEditText.hint = "" // Убираем hint при клике
-            binding.urlEditText.setSelection(binding.urlEditText.text?.length ?: 0)
+            binding.urlEditText.requestFocus()
         }
     }
 
@@ -147,25 +134,19 @@ class MainActivity : AppCompatActivity() {
         var inputText = url ?: binding.urlEditText.text.toString().trim()
 
         if (inputText.isEmpty()) {
-            // Если поле пустое, загружаем стартовую страницу
-            inputText = "https://www.google.com"
+            inputText = "https://www.nytimes.com"
         }
 
-        if (!inputText.startsWith("http://") && !inputText.startsWith("https://") && !inputText.startsWith("file://")) {
+        if (!inputText.startsWith("http://") && !inputText.startsWith("https://")) {
             inputText = if (inputText.contains(".")) {
                 "https://$inputText"
             } else {
-                "https://www.google.com/search?q=${URLEncoder.encode(inputText, "UTF-8")}"
+                "https://www.nytimes.com"
             }
         }
 
         binding.webView.loadUrl(inputText)
         hideKeyboard()
-
-        // После загрузки URL восстанавливаем hint если нужно
-        if (binding.urlEditText.text.toString().isEmpty()) {
-            binding.urlEditText.hint = getString(R.string.search_hint)
-        }
     }
 
     private fun hideKeyboard() {
@@ -227,7 +208,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun newTab() {
         Toast.makeText(this, "Новая вкладка", Toast.LENGTH_SHORT).show()
-        loadUrl("https://www.google.com")
+        loadUrl("https://www.nytimes.com")
     }
 
     private fun showHistory() {
@@ -367,6 +348,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadHomePage() {
-        loadUrl("https://www.google.com")
+        loadUrl("https://www.nytimes.com")
     }
 }

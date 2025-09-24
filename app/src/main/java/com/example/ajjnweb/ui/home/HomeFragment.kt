@@ -31,7 +31,7 @@ class HomeFragment : Fragment() {
         setupWebView()
         setupListeners()
 
-        loadUrl("https://www.google.com")
+        loadUrl("https://www.nytimes.com")
     }
 
     private fun setupWebView() {
@@ -110,7 +110,7 @@ class HomeFragment : Fragment() {
             if (inputText.contains(".")) {
                 inputText = "https://$inputText"
             } else {
-                inputText = "https://www.google.com/search?q=${java.net.URLEncoder.encode(inputText, "UTF-8")}"
+                inputText = "https://www.nytimes.com"
             }
         }
 
