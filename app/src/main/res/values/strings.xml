@@ -19,7 +19,7 @@
     <string name="history_cleared">История очищена</string>
     <string name="cookies_cleared">Cookies очищены</string>
     <string name="incognito_mode">Режим инкогнито</string>
-    <string name="about_message">VShargin (C) 2025. vaspull9@gmail.com\nAjjnWeb v1.1.12\nБраузер с интерфейсом Chrome и жестовой навигацией</string>
+    <string name="about_message">VShargin (C) 2025. vaspull9@gmail.com\nAjjnWeb v1.2.1\nБраузер с интерфейсом Chrome и жестовой навигацией</string>
     <string name="back">Назад</string>
     <string name="forward">Вперед</string>
     <string name="refresh">Обновить</string>

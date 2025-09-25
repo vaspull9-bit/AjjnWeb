@@ -110,7 +110,7 @@ class HomeFragment : Fragment() {
             if (inputText.contains(".")) {
                 inputText = "https://$inputText"
             } else {
-                inputText = "https://www.nytimes.com"
+                inputText = "https://www.google.com/search?q=${java.net.URLEncoder.encode(inputText, "UTF-8")}"
             }
         }
 

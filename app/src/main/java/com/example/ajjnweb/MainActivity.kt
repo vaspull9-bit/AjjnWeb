@@ -1,3 +1,6 @@
+// AjjnWeb v1.2.1
+// исправлен поиск гугл
+
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
@@ -141,7 +144,7 @@ class MainActivity : AppCompatActivity() {
             inputText = if (inputText.contains(".")) {
                 "https://$inputText"
             } else {
-                "https://www.nytimes.com"
+                "https://www.google.com/search?q=${java.net.URLEncoder.encode(inputText, "UTF-8")}"
             }
         }
 
