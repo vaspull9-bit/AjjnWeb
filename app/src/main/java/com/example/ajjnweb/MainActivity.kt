@@ -1,10 +1,10 @@
-// AjjnWeb v1.5.3 - Добавляем выбор поисковой системы и улучшенное управление вкладками
+// AjjnWeb v1.6.1 - Исправлены режим ПК
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.view.View
 import android.webkit.*
@@ -20,6 +20,10 @@ import androidx.core.content.edit
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Collections
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
+import android.widget.FrameLayout // Добавить в импорты
 
 class MainActivity : AppCompatActivity() {
 
@@ -77,6 +81,26 @@ class MainActivity : AppCompatActivity() {
         Widget("Wikipedia", "https://wikipedia.org", "📚")
     )
 
+    private lateinit var textToSpeech: TextToSpeech
+    private var isSpeaking = false
+
+    private var isDesktopMode = false
+
+    private var speechPlayerView: View? = null
+    private var currentSpeechText = ""
+    private var currentSpeechPosition = 0
+
+    private var lastDesktopModeToggle = 0L
+
+    ////////////////////////////////////////////////////////////////////////
+    //
+    //
+    //                   ФУНКЦИИ
+    //
+    //
+    //
+    ///////////////////////////////////////////////////////////////////////
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,10 +108,68 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        // ИСПРАВЛЯЕМ: по умолчанию мобильный режим
+        isDesktopMode = prefs.getBoolean("desktop_mode", false)
+        setupTextToSpeech()
         setupWebView()
         setupClickListeners()
         setupBackPressedHandler()
         initializeFirstTab()
+
+        applyTheme()
+    }
+
+    // озвучка
+    private fun setupTextToSpeech() {
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                // Пробуем установить язык страницы или системный по умолчанию
+                val pageLanguage = detectPageLanguage()
+                val locale = if (pageLanguage != null) {
+                    // ИСПРАВЛЯЕМ на Locale.Builder:
+                    Locale.Builder().apply {
+                        when (pageLanguage) {
+                            "ru" -> setLanguage("ru").setRegion("RU")
+                            "de" -> setLanguage("de").setRegion("DE")
+                            "fr" -> setLanguage("fr").setRegion("FR")
+                            "es" -> setLanguage("es").setRegion("ES")
+                            "it" -> setLanguage("it").setRegion("IT")
+                            "zh" -> setLanguage("zh").setRegion("CN")
+                            "ja" -> setLanguage("ja").setRegion("JP")
+                            "ko" -> setLanguage("ko").setRegion("KR")
+                            else -> setLanguage(pageLanguage)
+                        }
+                    }.build()
+                } else {
+                    Locale.getDefault()
+                }
+
+                val result = textToSpeech.setLanguage(locale)
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    // Если язык не поддерживается, пробуем английский
+                    textToSpeech.setLanguage(Locale.ENGLISH)
+                }
+            } else {
+                Toast.makeText(this, "Ошибка инициализации озвучки", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+
+    private fun detectPageLanguage(): String? {
+        val url = binding.webView.url ?: return null
+        // Простая логика определения языка по домену
+        return when {
+            url.contains(".ru/") || url.contains(".рф/") -> "ru"
+            url.contains(".de/") -> "de"
+            url.contains(".fr/") -> "fr"
+            url.contains(".es/") -> "es"
+            url.contains(".it/") -> "it"
+            url.contains(".cn/") || url.contains(".zh/") -> "zh"
+            url.contains(".jp/") || url.contains(".ja/") -> "ja"
+            url.contains(".kr/") || url.contains(".ko/") -> "ko"
+            else -> null // Будет использован системный язык
+        }
     }
 
     private fun getSelectedSearchEngine(): String {
@@ -165,6 +247,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupWebView() {
         val webView = binding.webView
 
+        // ДОБАВИТЬ/ЗАМЕНИТЬ в setupWebView()
         with(webView.settings) {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -177,16 +260,18 @@ class MainActivity : AppCompatActivity() {
             allowFileAccess = true
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
+
+            // ПРОСТОЙ desktop mode БЕЗ лишних JavaScript
+            if (isDesktopMode) {
+                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            } else {
+                userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36"
+            }
         }
 
         webView.addJavascriptInterface(JavaScriptInterface(), "Android")
 
         webView.webViewClient = object : WebViewClient() {
-            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                binding.progressBar.visibility = View.VISIBLE
-                binding.progressBar.progress = 0
-            }
-
             override fun onPageFinished(view: WebView?, url: String?) {
                 binding.progressBar.visibility = View.GONE
                 binding.urlEditText.setText(url)
@@ -195,6 +280,11 @@ class MainActivity : AppCompatActivity() {
                 currentTab?.let {
                     it.url = url ?: ""
                     it.title = view?.title ?: "Без названия"
+                }
+
+                // ДОБАВИТЬ: применяем desktop viewport только для НЕ домашних страниц
+                if (isDesktopMode && url != null && !url.contains("data:text/html")) {
+                    applyDesktopViewport()
                 }
 
                 if (!currentTab?.isIncognito!!) {
@@ -235,7 +325,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
         binding.tabsCounterButton.setOnClickListener { showAdvancedTabsOverview() }
-
+        binding.homeButton.setOnClickListener { goHome() } // ДОБАВИТЬ эту строку
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
                 loadUrl()
@@ -248,6 +338,12 @@ class MainActivity : AppCompatActivity() {
         binding.urlEditText.setOnClickListener {
             binding.urlEditText.requestFocus()
         }
+    }
+
+    // Кнопка идти домой
+    private fun goHome() {
+        newTab() // Создаем новую вкладку вместо замены текущей
+        Toast.makeText(this, "Новая вкладка с виджетами", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateTabsCounter() {
@@ -298,111 +394,133 @@ class MainActivity : AppCompatActivity() {
     private fun createWidgetsHtml(): String {
         val widgets = getWidgets().joinToString("") { widget ->
             """
-            <a class="widget" href="${widget.url}" onclick="handleWidgetClick('${widget.url}')">
-                <div class="widget-icon">${widget.icon}</div>
-                <div class="widget-title">${widget.name}</div>
-            </a>
-            """
+        <a class="widget" href="${widget.url}" onclick="handleWidgetClick('${widget.url}')">
+            <div class="widget-icon">${widget.icon}</div>
+            <div class="widget-title">${widget.name}</div>
+        </a>
+        """
         }
 
-        return """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    body { 
-                        font-family: Arial, sans-serif; 
-                        margin: 0; 
-                        padding: 20px; 
-                        background: #f0f0f0; 
-                    }
-                    .header { 
-                        text-align: center; 
-                        margin-bottom: 20px; 
-                        color: #333; 
-                    }
-                    .widgets-container {
-                        display: flex;
-                        flex-wrap: wrap;
-                        justify-content: center;
-                        gap: 15px;
-                        max-width: 1200px;
-                        margin: 0 auto;
-                    }
-                    .widget { 
-                        background: white; 
-                        width: 100px;
-                        height: 100px;
-                        border-radius: 12px; 
-                        text-align: center; 
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
-                        cursor: pointer; 
-                        transition: transform 0.2s;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        align-items: center;
-                        text-decoration: none;
-                        color: #333;
-                    }
-                    .widget:hover {
-                        transform: translateY(-2px);
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                    }
-                    .widget-icon { 
-                        font-size: 32px; 
-                        margin-bottom: 8px; 
-                    }
-                    .widget-title { 
-                        font-size: 12px; 
-                        font-weight: bold;
-                        padding: 0 5px;
-                    }
-                    .edit-section {
-                        text-align: center;
-                        margin-top: 30px;
-                    }
-                    .edit-button {
-                        background: #4285f4;
-                        color: white;
-                        border: none;
-                        padding: 12px 24px;
-                        border-radius: 24px;
-                        cursor: pointer;
-                        font-size: 14px;
-                        font-weight: bold;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>Мои виджеты</h2>
-                </div>
-                <div class="widgets-container">
-                    $widgets
-                </div>
-                <div class="edit-section">
-                    <button class="edit-button" onclick="editWidgets()">Редактировать виджеты</button>
-                </div>
+        // ИСПРАВЛЯЕМ условные выражения
+        val viewportWidth = if (isDesktopMode) "1200" else "device-width"
+        val bodyStyle = if (isDesktopMode) "min-width: 1200px;" else ""
+        val containerWidth = if (isDesktopMode) "1200px" else "100%"
+        val widgetWidth = if (isDesktopMode) "120px" else "100px"
+        val widgetHeight = if (isDesktopMode) "120px" else "100px"
+        val iconSize = if (isDesktopMode) "40px" else "32px"
+        val titleSize = if (isDesktopMode) "14px" else "12px"
+        val desktopModeJs = if (isDesktopMode) "true" else "false"
 
-                <script>
-                    function handleWidgetClick(url) {
-                        if (window.Android) {
-                            window.Android.trackWidgetClick(url);
-                        }
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=$viewportWidth, initial-scale=1.0">
+            <style>
+                body { 
+                    font-family: Arial, sans-serif; 
+                    margin: 0; 
+                    padding: 20px; 
+                    background: #f0f0f0; 
+                    $bodyStyle
+                }
+                .header { 
+                    text-align: center; 
+                    margin-bottom: 20px; 
+                    color: #333; 
+                }
+                .widgets-container {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: center;
+                    gap: 15px;
+                    max-width: $containerWidth;
+                    margin: 0 auto;
+                }
+                .widget { 
+                    background: white; 
+                    width: $widgetWidth;
+                    height: $widgetHeight;
+                    border-radius: 12px; 
+                    text-align: center; 
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                    cursor: pointer; 
+                    transition: transform 0.2s;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    text-decoration: none;
+                    color: #333;
+                    flex-shrink: 0;
+                }
+                .widget:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                }
+                .widget-icon { 
+                    font-size: $iconSize; 
+                    margin-bottom: 8px; 
+                }
+                .widget-title { 
+                    font-size: $titleSize; 
+                    font-weight: bold;
+                    padding: 0 5px;
+                }
+                .edit-section {
+                    text-align: center;
+                    margin-top: 30px;
+                }
+                .edit-button {
+                    background: #4285f4;
+                    color: white;
+                    border: none;
+                    padding: 12px 24px;
+                    border-radius: 24px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h2>Мои виджеты</h2>
+            </div>
+            <div class="widgets-container">
+                $widgets
+            </div>
+            <div class="edit-section">
+                <button class="edit-button" onclick="editWidgets()">Редактировать виджеты</button>
+            </div>
+
+            <script>
+                function handleWidgetClick(url) {
+                    if (window.Android) {
+                        window.Android.trackWidgetClick(url);
                     }
-                    
-                    function editWidgets() {
-                        if (window.Android) {
-                            window.Android.editWidgets();
-                        }
+                }
+                
+                function editWidgets() {
+                    if (window.Android) {
+                        window.Android.editWidgets();
                     }
-                </script>
-            </body>
-            </html>
-        """.trimIndent()
+                }
+                
+                // Предотвращаем масштабирование на desktop
+                if ($desktopModeJs) {
+                    document.addEventListener('gesturestart', function (e) {
+                        e.preventDefault();
+                    });
+                    document.addEventListener('touchmove', function (e) {
+                        if (e.scale !== 1) { e.preventDefault(); }
+                    }, { passive: false });
+                }
+            </script>
+        </body>
+        </html>
+    """.trimIndent()
     }
 
     @SuppressLint("JavascriptInterface")
@@ -546,9 +664,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun newTab() {
-        val newTab = Tab(nextTabId++, "", "Новая вкладка")
+        // ИСПРАВЛЯЕМ: новая вкладка всегда в обычном режиме
+        val newTab = Tab(nextTabId++, "", "Новая вкладка", false) // Явно false
         tabs.add(newTab)
         currentTabId = newTab.id
+
+        // ПРИМЕНЯЕМ ТЕМУ ДЛЯ НОВОЙ ВКЛАДКИ
+        applyTheme()
+
         showHomePageWithWidgets()
         updateTabsCounter()
         Toast.makeText(this, "Новая вкладка создана", Toast.LENGTH_SHORT).show()
@@ -558,6 +681,10 @@ class MainActivity : AppCompatActivity() {
         val newTab = Tab(nextTabId++, "", "Новая вкладка инкогнито", true)
         tabs.add(newTab)
         currentTabId = newTab.id
+
+        // ПРИМЕНЯЕМ ТЕМУ ДЛЯ НОВОЙ ВКЛАДКИ
+        applyTheme()
+
         showHomePageWithWidgets()
         updateTabsCounter()
         Toast.makeText(this, "Новая вкладка инкогнито создана", Toast.LENGTH_SHORT).show()
@@ -577,6 +704,9 @@ class MainActivity : AppCompatActivity() {
         currentTabId = tabId
         val tab = getCurrentTab()
         tab?.let {
+            // ПРИМЕНЯЕМ ТЕМУ ПРИ ПЕРЕКЛЮЧЕНИИ ВКЛАДКИ
+            applyTheme()
+
             if (it.url.isEmpty()) {
                 showHomePageWithWidgets()
             } else {
@@ -607,6 +737,7 @@ class MainActivity : AppCompatActivity() {
             "→ Вперед",
             "⟳ Обновить",
             "＋ Новая вкладка",
+            "🖥️ Версия для ПК: ${if (isDesktopMode) "Вкл" else "Выкл"}",
             "🔍 Найти на странице",
             "🌐 Перевести страницу",
             "🔊 Озвучить страницу",
@@ -614,7 +745,7 @@ class MainActivity : AppCompatActivity() {
             "🔖 Закладки",
             "📤 Поделиться",
             "⚙️ Настройки",
-            "ℹ️ О программе v1.5.3"
+            "ℹ️ О программе"
         )
 
         AlertDialog.Builder(this)
@@ -625,21 +756,250 @@ class MainActivity : AppCompatActivity() {
                     1 -> goForward()
                     2 -> refresh()
                     3 -> newTab()
-                    4 -> findOnPage()
-                    5 -> translatePage()
-                    6 -> speakPage()
-                    7 -> showHistory()
-                    8 -> showBookmarks()
-                    9 -> sharePage()
-                    10 -> showSettings()
-                    11 -> showAbout()
+                    4 -> toggleDesktopMode() // ДОБАВИТЬ эту строку
+                    5 -> findOnPage()
+                    6 -> translatePage()
+                    7 -> speakPage()
+                    8 -> showHistory()
+                    9 -> showBookmarks()
+                    10 -> sharePage()
+                    11 -> showSettings()
+                    12 -> showAbout()
                 }
             }
             .show()
     }
 
+
+// Версия для ПК
+private fun toggleDesktopMode() {
+    val newDesktopMode = !isDesktopMode
+    prefs.edit { putBoolean("desktop_mode", newDesktopMode) }
+
+    // ПРЕДОТВРАЩАЕМ многократные быстрые нажатия
+    if (isDesktopMode == newDesktopMode) return
+
+    isDesktopMode = newDesktopMode
+
+    // ПРИМЕНЯЕМ НАСТРОЙКИ БЕЗ НЕМЕДЛЕННОЙ ПЕРЕЗАГРУЗКИ
+    setupWebView()
+
+    val currentUrl = binding.webView.url
+    val isHomePage = currentUrl == null || currentUrl.isEmpty() || currentUrl.contains("data:text/html")
+
+    if (!isHomePage) {
+        // Добавляем задержку для стабильности
+        binding.webView.postDelayed({
+            binding.webView.reload()
+        }, 300)
+    }
+
+    showDesktopModeConfirmation()
+}
+
+    private fun showDesktopModeConfirmation() {
+        // Показываем диалог вместо Toast для лучшего UX
+        AlertDialog.Builder(this)
+            .setTitle("Режим отображения")
+            .setMessage("Версия для ПК: ${if (isDesktopMode) "ВКЛЮЧЕНА\n\nСтраница будет перезагружена" else "ВЫКЛЮЧЕНА\n\nСтраница будет перезагружена"}")
+            .setPositiveButton("OK") { _, _ ->
+                // Подтверждение получено
+            }
+            .show()
+    }
+    // ДОБАВИТЬ новый метод
+    private fun applyDesktopViewport() {
+        if (isDesktopMode) {
+            binding.webView.evaluateJavascript("""
+            (function() {
+                var viewport = document.querySelector('meta[name="viewport"]');
+                if (!viewport) {
+                    viewport = document.createElement('meta');
+                    viewport.name = 'viewport';
+                    document.getElementsByTagName('head')[0].appendChild(viewport);
+                }
+                viewport.content = 'width=1200, initial-scale=1.0';
+                
+                // Также пробуем изменить ширину body
+                document.body.style.minWidth = '1200px';
+            })();
+        """, null)
+        }
+    }
+
+
+
+
+// Поиск
     private fun findOnPage() {
-        Toast.makeText(this, "Поиск на странице (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
+        // Временная реализация - просто показываем диалог
+        val dialogView = layoutInflater.inflate(R.layout.dialog_find_on_page, null)
+        val searchEditText = dialogView.findViewById<EditText>(R.id.searchEditText)
+
+        AlertDialog.Builder(this)
+            .setTitle("Найти на странице")
+            .setView(dialogView)
+            .setPositiveButton("Найти") { _, _ ->
+                val query = searchEditText.text.toString()
+                if (query.isNotEmpty()) {
+                    binding.webView.findAllAsync(query)
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+
+    private fun speakPage() {
+        if (speechPlayerView != null) {
+            // Если плеер уже открыт, просто выходим
+            return
+        }
+
+        binding.webView.evaluateJavascript(
+            "(function() { " +
+                    "var text = document.body.innerText; " +
+                    "text = text.replace(/[\\r\\n\\t]+/g, ' ').replace(/\\s+/g, ' ').trim(); " +
+                    "return text.substring(0, 10000); " + // Увеличиваем лимит
+                    "})();"
+        ) { result ->
+            val text = result.replace("\"", "").trim()
+            if (text.isNotEmpty()) {
+                currentSpeechText = text
+                currentSpeechPosition = 0
+                speakCurrentText()
+                showFloatingSpeechPlayer()
+            } else {
+                Toast.makeText(this, "Не удалось получить текст для озвучки", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun speakCurrentText() {
+        if (currentSpeechPosition >= currentSpeechText.length) {
+            // Текст закончился
+            stopSpeaking()
+            return
+        }
+
+        val textToSpeak = if (currentSpeechText.length - currentSpeechPosition > 4000) {
+            currentSpeechText.substring(currentSpeechPosition, currentSpeechPosition + 4000)
+        } else {
+            currentSpeechText.substring(currentSpeechPosition)
+        }
+
+        textToSpeech.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, "page_reading")
+        isSpeaking = true
+    }
+
+    private fun showFloatingSpeechPlayer() {
+        // Создаем плавающий плеер
+        val playerView = layoutInflater.inflate(R.layout.floating_speech_player, null)
+        val params = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.BOTTOM
+        }
+
+        playerView.layoutParams = params
+        binding.root.addView(playerView)
+        speechPlayerView = playerView
+
+        setupSpeechPlayerControls(playerView)
+    }
+
+    private fun setupSpeechPlayerControls(playerView: View) {
+        val playButton = playerView.findViewById<ImageButton>(R.id.playButton)
+        val pauseButton = playerView.findViewById<ImageButton>(R.id.pauseButton)
+        val stopButton = playerView.findViewById<ImageButton>(R.id.stopButton)
+        val closeButton = playerView.findViewById<ImageButton>(R.id.closeButton)
+        val statusText = playerView.findViewById<TextView>(R.id.statusText)
+
+        playButton.setOnClickListener {
+            if (!isSpeaking) {
+                if (currentSpeechPosition >= currentSpeechText.length) {
+                    // Начинаем заново
+                    currentSpeechPosition = 0
+                }
+                speakCurrentText()
+                statusText.text = "Озвучка активна"
+            }
+        }
+
+        pauseButton.setOnClickListener {
+            if (isSpeaking) {
+                textToSpeech.stop()
+                isSpeaking = false
+                statusText.text = "Пауза"
+            }
+        }
+
+        stopButton.setOnClickListener {
+            stopSpeaking()
+            statusText.text = "Остановлено"
+        }
+
+        closeButton.setOnClickListener {
+            closeSpeechPlayer()
+        }
+
+        // Слушатель завершения речи
+        textToSpeech.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {
+                runOnUiThread {
+                    statusText.text = "Озвучка активна"
+                    isSpeaking = true
+                }
+            }
+
+            override fun onDone(utteranceId: String?) {
+                runOnUiThread {
+                    if (utteranceId == "page_reading") {
+                        currentSpeechPosition += 4000 // Увеличиваем позицию
+                        if (currentSpeechPosition < currentSpeechText.length) {
+                            // Продолжаем чтение
+                            speakCurrentText()
+                        } else {
+                            // Текст закончен
+                            statusText.text = "Озвучка завершена"
+                            isSpeaking = false
+                        }
+                    }
+                }
+            }
+
+            override fun onError(utteranceId: String?) {
+                runOnUiThread {
+                    statusText.text = "Ошибка озвучки"
+                    isSpeaking = false
+                }
+            }
+        })
+    }
+
+
+    private fun stopSpeaking() {
+        textToSpeech.stop()
+        isSpeaking = false
+        currentSpeechPosition = 0
+    }
+
+    private fun closeSpeechPlayer() {
+        stopSpeaking()
+        speechPlayerView?.let {
+            binding.root.removeView(it)
+            speechPlayerView = null
+        }
+        textToSpeech.setOnUtteranceProgressListener(null) // Убираем слушатель
+    }
+
+
+    override fun onDestroy() {
+        super.onDestroy()
+        closeSpeechPlayer() // ДОБАВИТЬ эту строку
+        textToSpeech.stop()
+        textToSpeech.shutdown()
     }
 
     private fun translatePage() {
@@ -651,9 +1011,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun speakPage() {
-        Toast.makeText(this, "Озвучка страницы (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
-    }
+
 
     private fun goBack() {
         if (binding.webView.canGoBack()) {
@@ -681,6 +1039,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSettings() {
         val settings = arrayOf(
             "Поисковая система",
+            "Режим для ПК", // НОВОЕ - без статуса
             "Очистить кэш",
             "Очистить историю",
             "Очистить cookies",
@@ -688,22 +1047,63 @@ class MainActivity : AppCompatActivity() {
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Настройки v1.5.3")
+            .setTitle("Настройки")
             .setItems(settings) { _, which ->
                 when (which) {
                     0 -> showSearchEngineSelection()
-                    1 -> clearCache()
-                    2 -> clearHistory()
-                    3 -> clearCookies()
-                    4 -> toggleIncognitoMode()
+                    1 -> showDesktopModeDialog() // НОВОЕ - диалог с выбором
+                    2 -> clearCache()
+                    3 -> clearHistory()
+                    4 -> clearCookies()
+                    5 -> toggleIncognitoMode()
                 }
             }
+            .show()
+    }
+
+    // ДОБАВЛЯЕМ новый метод для выбора режима
+    private fun showDesktopModeDialog() {
+        // ЗАЩИТА ОТ СПАМА КНОПКОЙ
+        if (System.currentTimeMillis() - lastDesktopModeToggle < 2000) {
+            Toast.makeText(this, "Подождите перед следующим изменением", Toast.LENGTH_SHORT).show()
+            return
+        }
+        lastDesktopModeToggle = System.currentTimeMillis()
+
+        val options = arrayOf("Мобильный режим", "Режим для ПК")
+
+        AlertDialog.Builder(this)
+            .setTitle("Выберите режим отображения")
+            .setSingleChoiceItems(options, if (isDesktopMode) 1 else 0) { dialog, which ->
+                val newMode = which == 1
+                if (isDesktopMode != newMode) {
+                    isDesktopMode = newMode
+                    prefs.edit { putBoolean("desktop_mode", isDesktopMode) }
+                    setupWebView()
+
+                    // УВЕЛИЧИВАЕМ ЗАДЕРЖКУ ДЛЯ СТАБИЛЬНОСТИ
+                    binding.webView.postDelayed({
+                        val currentUrl = binding.webView.url
+                        if (currentUrl != null && !currentUrl.contains("data:text/html")) {
+                            binding.webView.reload()
+                        } else {
+                            showHomePageWithWidgets()
+                        }
+                    }, 1000) // Увеличиваем задержку до 1 секунды
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("Отмена", null)
             .show()
     }
 
     private fun toggleIncognitoMode() {
         val currentTab = getCurrentTab()
         currentTab?.isIncognito = !(currentTab?.isIncognito ?: false)
+
+        // ПРИМЕНЯЕМ ТЕМУ
+        applyTheme()
+
         Toast.makeText(this,
             if (currentTab?.isIncognito == true) "Режим инкогнито активирован" else "Режим инкогнито выключен",
             Toast.LENGTH_SHORT).show()
@@ -844,13 +1244,7 @@ class MainActivity : AppCompatActivity() {
         } ?: emptyList()
     }
 
-    private fun showAbout() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.about)
-            .setMessage("${getString(R.string.about_message)}\n\nВерсия 1.5.3 - Добавлен выбор поисковой системы и улучшенное управление вкладками")
-            .setPositiveButton("OK", null)
-            .show()
-    }
+
 
     // Методы для редактирования виджетов (без изменений из v1.5.2)
     private fun showEditWidgetsDialog() {
@@ -953,6 +1347,7 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Отмена", null)
             .show()
+
     }
 
     private fun showDeleteWidgetConfirmation(widgets: MutableList<Widget>, index: Int) {
@@ -1014,5 +1409,70 @@ class MainActivity : AppCompatActivity() {
             url.contains("wikipedia") -> "📚"
             else -> "🌐"
         }
+    }
+    private fun applyTheme() {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) {
+            applyIncognitoTheme()
+        } else {
+            applyNormalTheme()
+        }
+    }
+
+    private fun applyIncognitoTheme() {
+        // ПРИМЕНЯЕМ ЧЕРНУЮ ТЕМУ
+        binding.root.setBackgroundColor(Color.BLACK)
+
+        // Тулбар - темно-серый
+        val toolbarColor = Color.parseColor("#2D2D2D")
+        binding.urlEditText.setBackgroundColor(toolbarColor)
+        binding.urlEditText.setTextColor(Color.WHITE)
+
+        // Кнопки - ЯРКИЕ ИКОНКИ ДЛЯ ЛУЧШЕЙ ВИДИМОСТИ
+        binding.tabsCounterButton.setBackgroundColor(toolbarColor)
+        binding.tabsCounterButton.setTextColor(Color.WHITE)
+
+        binding.homeButton.setColorFilter(Color.WHITE)
+        binding.menuButton.setColorFilter(Color.WHITE)
+
+
+        // Явно увеличиваем контрастность
+        binding.homeButton.alpha = 1.0f
+        binding.menuButton.alpha = 1.0f
+
+//        // Статус-бар - ИСПРАВЛЯЕМ deprecated
+//        window.statusBarColor = Color.BLACK
+//        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+//                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+
+        // Добавляем тонкую обводку для лучшей видимости
+        binding.homeButton.setBackgroundColor(Color.TRANSPARENT)
+        binding.menuButton.setBackgroundColor(Color.TRANSPARENT)
+
+        // Прогресс-бар
+        binding.progressBar.progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        binding.progressBar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.DKGRAY)
+    }
+
+    private fun applyNormalTheme() {
+        binding.root.setBackgroundColor(Color.WHITE)
+        binding.urlEditText.setBackgroundColor(Color.WHITE)
+        binding.urlEditText.setTextColor(Color.BLACK)
+        binding.tabsCounterButton.setBackgroundColor(Color.LTGRAY)
+        binding.tabsCounterButton.setTextColor(Color.BLACK)
+        binding.homeButton.setColorFilter(Color.BLACK)
+        binding.menuButton.setColorFilter(Color.BLACK)
+
+        // Прогресс-бар
+        binding.progressBar.progressTintList = null
+        binding.progressBar.progressBackgroundTintList = null
+    }
+
+    private fun showAbout() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.about)
+            .setMessage("${getString(R.string.about_message)}\n\nВерсия AjjnWeb v1.6.1. Стабильные режимы отображения")
+            .setPositiveButton("OK", null)
+            .show()
     }
 }
