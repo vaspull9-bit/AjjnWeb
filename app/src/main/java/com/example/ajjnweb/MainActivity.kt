@@ -1,4 +1,4 @@
-// AjjnWeb v1.5.0 - Добавляем виджеты на домашнюю страницу
+// AjjnWeb v1.5.1 - Добавляем систему вкладок
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
@@ -22,6 +22,19 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
+
+    // Данные о вкладках
+    private data class Tab(
+        val id: Int,
+        var url: String,
+        var title: String,
+        var history: List<String> = emptyList(),
+        var scrollPosition: Int = 0
+    )
+
+    private val tabs = mutableListOf<Tab>()
+    private var currentTabId = 0
+    private var nextTabId = 1
 
     // Популярные сайты для виджетов
     private val popularSites = listOf(
@@ -49,14 +62,27 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupClickListeners()
         setupBackPressedHandler()
-        loadHomePageWithWidgets() // Загружаем виджеты вместо NY Times
+        initializeFirstTab()
+    }
+
+    private fun initializeFirstTab() {
+        // Создаем первую вкладку с виджетами
+        val firstTab = Tab(nextTabId++, "", "Домашняя страница")
+        tabs.add(firstTab)
+        currentTabId = firstTab.id
+        showHomePageWithWidgets()
+        updateTabsCounter()
     }
 
     private fun setupBackPressedHandler() {
         val onBackPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                val currentTab = getCurrentTab()
                 if (binding.webView.canGoBack()) {
                     binding.webView.goBack()
+                } else if (currentTab?.url?.isNotEmpty() == true) {
+                    // Если на странице сайта - возвращаемся к виджетам
+                    showHomePageWithWidgets()
                 } else {
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
@@ -94,7 +120,16 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 binding.progressBar.visibility = View.GONE
                 binding.urlEditText.setText(url)
+
+                // Обновляем текущую вкладку
+                val currentTab = getCurrentTab()
+                currentTab?.let {
+                    it.url = url ?: ""
+                    it.title = view?.title ?: "Без названия"
+                }
+
                 saveToHistory(url ?: "", view?.title ?: "")
+                updateTabsCounter()
             }
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -118,12 +153,17 @@ class MainActivity : AppCompatActivity() {
 
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 supportActionBar?.title = title ?: "AjjnWeb"
+
+                // Обновляем заголовок вкладки
+                val currentTab = getCurrentTab()
+                currentTab?.title = title ?: "Без названия"
             }
         }
     }
 
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
+        binding.tabsCounterButton.setOnClickListener { showTabsOverview() }
 
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
@@ -139,11 +179,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateTabsCounter() {
+        binding.tabsCounterButton.text = tabs.size.toString()
+    }
+
+    private fun getCurrentTab(): Tab? {
+        return tabs.find { it.id == currentTabId }
+    }
+
     private fun loadUrl(url: String? = null) {
         var inputText = url ?: binding.urlEditText.text.toString().trim()
 
         if (inputText.isEmpty()) {
-            showHomePageWithWidgets() // Показываем виджеты при пустом вводе
+            showHomePageWithWidgets()
             return
         }
 
@@ -166,8 +214,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showHomePageWithWidgets() {
-        // Создаем HTML страницу с виджетами популярных сайтов
-        val widgetsHtml = """
+        val widgetsHtml = createWidgetsHtml()
+        binding.webView.loadDataWithBaseURL(null, widgetsHtml, "text/html", "UTF-8", null)
+
+        // Обновляем текущую вкладку
+        val currentTab = getCurrentTab()
+        currentTab?.let {
+            it.url = ""
+            it.title = "Домашняя страница"
+        }
+    }
+
+    private fun createWidgetsHtml(): String {
+        val widgets = popularSites.joinToString("") { (name, url) ->
+            """
+            <a class="widget" href="$url">
+                <div class="widget-icon">${getSiteIcon(name)}</div>
+                <div class="widget-title">$name</div>
+            </a>
+            """
+        }
+
+        return """
             <!DOCTYPE html>
             <html>
             <head>
@@ -222,64 +290,18 @@ class MainActivity : AppCompatActivity() {
                         font-weight: bold;
                         padding: 0 5px;
                     }
-                    .edit-widgets {
-                        text-align: center;
-                        margin-top: 20px;
-                    }
-                    .edit-btn {
-                        background: #4285f4;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 20px;
-                        cursor: pointer;
-                        font-size: 14px;
-                    }
                 </style>
             </head>
             <body>
                 <div class="header">
                     <h2>Часто посещаемые сайты</h2>
                 </div>
-                
                 <div class="widgets-container">
-                    ${createWidgetsHtml()}
+                    $widgets
                 </div>
-                
-                <div class="edit-widgets">
-                    <button class="edit-btn" onclick="editWidgets()">Редактировать виджеты</button>
-                </div>
-
-                <script>
-                    function openSite(url) {
-                        window.location.href = url;
-                    }
-                    
-                    function editWidgets() {
-                        alert('Редактирование виджетов будет доступно в следующем обновлении');
-                    }
-                    
-                    // Сохраняем частоту посещений
-                    function trackVisit(url) {
-                        localStorage.setItem('visit_' + url, Date.now());
-                    }
-                </script>
             </body>
             </html>
         """.trimIndent()
-
-        binding.webView.loadDataWithBaseURL(null, widgetsHtml, "text/html", "UTF-8", null)
-    }
-
-    private fun createWidgetsHtml(): String {
-        return popularSites.joinToString("") { (name, url) ->
-            """
-            <a class="widget" href="$url" onclick="trackVisit('$url')">
-                <div class="widget-icon">${getSiteIcon(name)}</div>
-                <div class="widget-title">$name</div>
-            </a>
-            """
-        }
     }
 
     private fun getSiteIcon(siteName: String): String {
@@ -300,6 +322,70 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showTabsOverview() {
+        val tabItems = arrayOf(
+            "Новая вкладка",
+            "Новая вкладка инкогнито",
+            "Закрыть все вкладки",
+            *tabs.map { it.title.takeIf { t -> t.isNotEmpty() } ?: "Новая вкладка" }.toTypedArray()
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Вкладки (${tabs.size})")
+            .setItems(tabItems) { _, which ->
+                when (which) {
+                    0 -> newTab()
+                    1 -> newIncognitoTab()
+                    2 -> closeAllTabs()
+                    else -> {
+                        // Переключаемся на существующую вкладку
+                        val tabIndex = which - 3
+                        if (tabIndex in tabs.indices) {
+                            switchToTab(tabs[tabIndex].id)
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun newTab() {
+        val newTab = Tab(nextTabId++, "", "Новая вкладка")
+        tabs.add(newTab)
+        currentTabId = newTab.id
+        showHomePageWithWidgets()
+        updateTabsCounter()
+        Toast.makeText(this, "Новая вкладка создана", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun newIncognitoTab() {
+        Toast.makeText(this, "Режим инкогнито (скоро в v1.5.2)", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun closeAllTabs() {
+        if (tabs.size > 1) {
+            tabs.clear()
+            initializeFirstTab()
+            Toast.makeText(this, "Все вкладки закрыты", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Нельзя закрыть последнюю вкладку", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun switchToTab(tabId: Int) {
+        currentTabId = tabId
+        val tab = getCurrentTab()
+        tab?.let {
+            if (it.url.isEmpty()) {
+                showHomePageWithWidgets()
+            } else {
+                binding.webView.loadUrl(it.url)
+            }
+        }
+        updateTabsCounter()
+    }
+
     private fun showBrowserMenu() {
         val menuItems = arrayOf(
             "← Назад",
@@ -310,11 +396,11 @@ class MainActivity : AppCompatActivity() {
             "🔖 Закладки",
             "📤 Поделиться",
             "⚙️ Настройки",
-            "ℹ️ О программе"
+            "ℹ️ О программе v1.5.1"
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Меню браузера v1.5.0")
+            .setTitle("Меню браузера")
             .setItems(menuItems) { _, which ->
                 when (which) {
                     0 -> goBack()
@@ -335,7 +421,10 @@ class MainActivity : AppCompatActivity() {
         if (binding.webView.canGoBack()) {
             binding.webView.goBack()
         } else {
-            showHomePageWithWidgets() // Возвращаемся к виджетам при нажатии назад на домашней странице
+            val currentTab = getCurrentTab()
+            if (currentTab?.url?.isNotEmpty() == true) {
+                showHomePageWithWidgets()
+            }
         }
     }
 
@@ -349,11 +438,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun refresh() {
         binding.webView.reload()
-    }
-
-    private fun newTab() {
-        Toast.makeText(this, "Новая вкладка", Toast.LENGTH_SHORT).show()
-        showHomePageWithWidgets()
     }
 
     private fun showHistory() {
@@ -415,7 +499,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Настройки")
+            .setTitle("Настройки v1.5.1")
             .setItems(settings) { _, which ->
                 when (which) {
                     0 -> clearCache()
@@ -444,7 +528,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun incognitoMode() {
-        Toast.makeText(this, "Режим инкогнито (скоро)", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Режим инкогнито (скоро в v1.5.2)", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveToHistory(url: String, title: String) {
@@ -483,12 +567,8 @@ class MainActivity : AppCompatActivity() {
     private fun showAbout() {
         AlertDialog.Builder(this)
             .setTitle(R.string.about)
-            .setMessage(getString(R.string.about_message))
+            .setMessage("${getString(R.string.about_message)}\n\nВерсия 1.5.1 - Добавлена система вкладок")
             .setPositiveButton("OK", null)
             .show()
-    }
-
-    private fun loadHomePageWithWidgets() {
-        showHomePageWithWidgets()
     }
 }

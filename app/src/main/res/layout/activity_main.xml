@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Простой тулбар без темных тем -->
+    <!-- Обновленный тулбар с кнопкой вкладок -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
@@ -13,7 +13,18 @@
         android:background="#FFFFFF"
         android:padding="8dp">
 
-        <!-- Поле ввода БЕЗ hint -->
+        <!-- Кнопка счетчика вкладок -->
+        <Button
+            android:id="@+id/tabsCounterButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="1"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:background="@drawable/tab_counter_background"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Поле ввода -->
         <EditText
             android:id="@+id/urlEditText"
             android:layout_width="0dp"
