@@ -1,4 +1,4 @@
-// AjjnWeb v1.5.1 - Добавляем систему вкладок
+// AjjnWeb v1.5.3 - Добавляем выбор поисковой системы и улучшенное управление вкладками
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
@@ -8,7 +8,7 @@ import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.View
 import android.webkit.*
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -17,17 +17,40 @@ import com.example.ajjnweb.databinding.ActivityMainBinding
 import java.net.URLEncoder
 import android.view.inputmethod.InputMethodManager
 import androidx.core.content.edit
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.Collections
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
 
+    // Поисковые системы
+    private val searchEngines = mapOf(
+        "Google" to "https://www.google.com/search?q=",
+        "Яндекс" to "https://yandex.ru/search/?text=",
+        "Bing" to "https://www.bing.com/search?q=",
+        "Yahoo" to "https://search.yahoo.com/search?p=",
+        "DuckDuckGo" to "https://duckduckgo.com/?q=",
+        "Baidu" to "https://www.baidu.com/s?wd=",
+        "StartPage" to "https://www.startpage.com/do/search?query=",
+        "Ask.com" to "https://www.ask.com/web?q=",
+        "You.com" to "https://you.com/search?q=",
+        "Wolfram Alpha" to "https://www.wolframalpha.com/input?i=",
+        "TinEye" to "https://tineye.com/search?url=",
+        "Brave" to "https://search.brave.com/search?q=",
+        "FreeSound" to "https://freesound.org/search/?q=",
+        "Creative Commons Search" to "https://search.creativecommons.org/search?q=",
+        "Giphy" to "https://giphy.com/search/"
+    )
+
     // Данные о вкладках
     private data class Tab(
         val id: Int,
         var url: String,
         var title: String,
+        var isIncognito: Boolean = false,
         var history: List<String> = emptyList(),
         var scrollPosition: Int = 0
     )
@@ -36,20 +59,22 @@ class MainActivity : AppCompatActivity() {
     private var currentTabId = 0
     private var nextTabId = 1
 
-    // Популярные сайты для виджетов
-    private val popularSites = listOf(
-        "Google" to "https://www.google.com",
-        "YouTube" to "https://www.youtube.com",
-        "Gmail" to "https://mail.google.com",
-        "ВКонтакте" to "https://vk.com",
-        "Яндекс" to "https://yandex.ru",
-        "Twitter" to "https://twitter.com",
-        "Instagram" to "https://instagram.com",
-        "Facebook" to "https://facebook.com",
-        "GitHub" to "https://github.com",
-        "Stack Overflow" to "https://stackoverflow.com",
-        "Reddit" to "https://reddit.com",
-        "Wikipedia" to "https://wikipedia.org"
+    // Виджеты
+    data class Widget(val name: String, val url: String, val icon: String)
+
+    private val defaultWidgets = listOf(
+        Widget("Google", "https://www.google.com", "🔍"),
+        Widget("YouTube", "https://www.youtube.com", "📺"),
+        Widget("Gmail", "https://mail.google.com", "📧"),
+        Widget("ВКонтакте", "https://vk.com", "👥"),
+        Widget("Яндекс", "https://yandex.ru", "🌐"),
+        Widget("Twitter", "https://twitter.com", "🐦"),
+        Widget("Instagram", "https://instagram.com", "📷"),
+        Widget("Facebook", "https://facebook.com", "👤"),
+        Widget("GitHub", "https://github.com", "💻"),
+        Widget("Stack Overflow", "https://stackoverflow.com", "❓"),
+        Widget("Reddit", "https://reddit.com", "📱"),
+        Widget("Wikipedia", "https://wikipedia.org", "📚")
     )
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -65,8 +90,50 @@ class MainActivity : AppCompatActivity() {
         initializeFirstTab()
     }
 
+    private fun getSelectedSearchEngine(): String {
+        return prefs.getString("search_engine", "Google") ?: "Google"
+    }
+
+    private fun getSearchEngineUrl(): String {
+        return searchEngines[getSelectedSearchEngine()] ?: searchEngines["Google"]!!
+    }
+
+    private fun getWidgets(): List<Widget> {
+        val widgetsJson = prefs.getString("custom_widgets", null)
+        return if (widgetsJson != null) {
+            try {
+                val jsonArray = JSONArray(widgetsJson)
+                val widgets = mutableListOf<Widget>()
+                for (i in 0 until jsonArray.length()) {
+                    val jsonObject = jsonArray.getJSONObject(i)
+                    widgets.add(Widget(
+                        jsonObject.getString("name"),
+                        jsonObject.getString("url"),
+                        jsonObject.getString("icon")
+                    ))
+                }
+                widgets
+            } catch (e: Exception) {
+                defaultWidgets
+            }
+        } else {
+            defaultWidgets
+        }
+    }
+
+    private fun saveWidgets(widgets: List<Widget>) {
+        val jsonArray = JSONArray()
+        widgets.forEach { widget ->
+            val jsonObject = JSONObject()
+            jsonObject.put("name", widget.name)
+            jsonObject.put("url", widget.url)
+            jsonObject.put("icon", widget.icon)
+            jsonArray.put(jsonObject)
+        }
+        prefs.edit { putString("custom_widgets", jsonArray.toString()) }
+    }
+
     private fun initializeFirstTab() {
-        // Создаем первую вкладку с виджетами
         val firstTab = Tab(nextTabId++, "", "Домашняя страница")
         tabs.add(firstTab)
         currentTabId = firstTab.id
@@ -77,23 +144,24 @@ class MainActivity : AppCompatActivity() {
     private fun setupBackPressedHandler() {
         val onBackPressedCallback = object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                val currentTab = getCurrentTab()
                 if (binding.webView.canGoBack()) {
                     binding.webView.goBack()
-                } else if (currentTab?.url?.isNotEmpty() == true) {
-                    // Если на странице сайта - возвращаемся к виджетам
-                    showHomePageWithWidgets()
                 } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
+                    val currentTab = getCurrentTab()
+                    if (currentTab?.url?.isNotEmpty() == true) {
+                        showHomePageWithWidgets()
+                    } else {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
                 }
             }
         }
         onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private fun setupWebView() {
         val webView = binding.webView
 
@@ -111,6 +179,8 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
         }
 
+        webView.addJavascriptInterface(JavaScriptInterface(), "Android")
+
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 binding.progressBar.visibility = View.VISIBLE
@@ -121,14 +191,15 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.visibility = View.GONE
                 binding.urlEditText.setText(url)
 
-                // Обновляем текущую вкладку
                 val currentTab = getCurrentTab()
                 currentTab?.let {
                     it.url = url ?: ""
                     it.title = view?.title ?: "Без названия"
                 }
 
-                saveToHistory(url ?: "", view?.title ?: "")
+                if (!currentTab?.isIncognito!!) {
+                    saveToHistory(url ?: "", view?.title ?: "")
+                }
                 updateTabsCounter()
             }
 
@@ -152,18 +223,18 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onReceivedTitle(view: WebView?, title: String?) {
-                supportActionBar?.title = title ?: "AjjnWeb"
-
-                // Обновляем заголовок вкладки
                 val currentTab = getCurrentTab()
-                currentTab?.title = title ?: "Без названия"
+                val tabTitle = title ?: "AjjnWeb"
+                supportActionBar?.title = if (currentTab?.isIncognito == true) "$tabTitle (Инкогнито)" else tabTitle
+
+                currentTab?.title = tabTitle
             }
         }
     }
 
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
-        binding.tabsCounterButton.setOnClickListener { showTabsOverview() }
+        binding.tabsCounterButton.setOnClickListener { showAdvancedTabsOverview() }
 
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
@@ -199,7 +270,7 @@ class MainActivity : AppCompatActivity() {
             inputText = if (inputText.contains(".")) {
                 "https://$inputText"
             } else {
-                "https://www.google.com/search?q=${URLEncoder.encode(inputText, "UTF-8")}"
+                "${getSearchEngineUrl()}${URLEncoder.encode(inputText, "UTF-8")}"
             }
         }
 
@@ -217,7 +288,6 @@ class MainActivity : AppCompatActivity() {
         val widgetsHtml = createWidgetsHtml()
         binding.webView.loadDataWithBaseURL(null, widgetsHtml, "text/html", "UTF-8", null)
 
-        // Обновляем текущую вкладку
         val currentTab = getCurrentTab()
         currentTab?.let {
             it.url = ""
@@ -226,11 +296,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createWidgetsHtml(): String {
-        val widgets = popularSites.joinToString("") { (name, url) ->
+        val widgets = getWidgets().joinToString("") { widget ->
             """
-            <a class="widget" href="$url">
-                <div class="widget-icon">${getSiteIcon(name)}</div>
-                <div class="widget-title">$name</div>
+            <a class="widget" href="${widget.url}" onclick="handleWidgetClick('${widget.url}')">
+                <div class="widget-icon">${widget.icon}</div>
+                <div class="widget-title">${widget.name}</div>
             </a>
             """
         }
@@ -290,64 +360,189 @@ class MainActivity : AppCompatActivity() {
                         font-weight: bold;
                         padding: 0 5px;
                     }
+                    .edit-section {
+                        text-align: center;
+                        margin-top: 30px;
+                    }
+                    .edit-button {
+                        background: #4285f4;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 24px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        font-weight: bold;
+                    }
                 </style>
             </head>
             <body>
                 <div class="header">
-                    <h2>Часто посещаемые сайты</h2>
+                    <h2>Мои виджеты</h2>
                 </div>
                 <div class="widgets-container">
                     $widgets
                 </div>
+                <div class="edit-section">
+                    <button class="edit-button" onclick="editWidgets()">Редактировать виджеты</button>
+                </div>
+
+                <script>
+                    function handleWidgetClick(url) {
+                        if (window.Android) {
+                            window.Android.trackWidgetClick(url);
+                        }
+                    }
+                    
+                    function editWidgets() {
+                        if (window.Android) {
+                            window.Android.editWidgets();
+                        }
+                    }
+                </script>
             </body>
             </html>
         """.trimIndent()
     }
 
-    private fun getSiteIcon(siteName: String): String {
-        return when (siteName) {
-            "Google" -> "🔍"
-            "YouTube" -> "📺"
-            "Gmail" -> "📧"
-            "ВКонтакте" -> "👥"
-            "Яндекс" -> "🌐"
-            "Twitter" -> "🐦"
-            "Instagram" -> "📷"
-            "Facebook" -> "👤"
-            "GitHub" -> "💻"
-            "Stack Overflow" -> "❓"
-            "Reddit" -> "📱"
-            "Wikipedia" -> "📚"
-            else -> "🌐"
+    @SuppressLint("JavascriptInterface")
+    inner class JavaScriptInterface {
+        @Suppress("UNUSED") // ДОБАВИТЬ эту аннотацию
+        @JavascriptInterface
+        fun editWidgets() {
+            runOnUiThread {
+                showEditWidgetsDialog()
+            }
         }
     }
 
-    private fun showTabsOverview() {
-        val tabItems = arrayOf(
-            "Новая вкладка",
-            "Новая вкладка инкогнито",
-            "Закрыть все вкладки",
-            *tabs.map { it.title.takeIf { t -> t.isNotEmpty() } ?: "Новая вкладка" }.toTypedArray()
-        )
+    // Остальные методы для виджетов остаются без изменений
+    // showEditWidgetsDialog(), showWidgetOptionsDialog(), etc.
+
+    private fun showAdvancedTabsOverview() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_tabs_overview, null)
+        val tabsContainer = dialogView.findViewById<LinearLayout>(R.id.tabsContainer)
+        val newTabButton = dialogView.findViewById<Button>(R.id.newTabButton)
+        val newIncognitoTabButton = dialogView.findViewById<Button>(R.id.newIncognitoTabButton)
+        val closeAllTabsButton = dialogView.findViewById<Button>(R.id.closeAllTabsButton)
+        val selectTabsButton = dialogView.findViewById<Button>(R.id.selectTabsButton)
+        val clearDataButton = dialogView.findViewById<Button>(R.id.clearDataButton)
+        val settingsButton = dialogView.findViewById<Button>(R.id.settingsButton)
+
+        // Очищаем и заполняем контейнер вкладок
+        tabsContainer.removeAllViews()
+        tabs.forEachIndexed { index, tab ->
+            val tabView = layoutInflater.inflate(R.layout.item_tab_preview, null)
+            val tabTitle = tabView.findViewById<TextView>(R.id.tabTitle)
+            val tabUrl = tabView.findViewById<TextView>(R.id.tabUrl)
+            val tabIcon = tabView.findViewById<TextView>(R.id.tabIcon)
+            val closeButton = tabView.findViewById<ImageButton>(R.id.closeTabButton)
+
+            tabTitle.text = tab.title.takeIf { it.isNotEmpty() } ?: "Новая вкладка"
+            tabUrl.text = tab.url.takeIf { it.isNotEmpty() } ?: "Домашняя страница"
+            tabIcon.text = if (tab.isIncognito) "👤" else "🌐"
+
+            tabView.setOnClickListener {
+                switchToTab(tab.id)
+            }
+
+            closeButton.setOnClickListener {
+                closeTab(index)
+                showAdvancedTabsOverview() // Обновляем диалог
+            }
+
+            tabsContainer.addView(tabView)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setTitle("Вкладки - ${tabs.size}")
+            .create()
+
+        newTabButton.setOnClickListener {
+            newTab()
+            dialog.dismiss()
+        }
+
+        newIncognitoTabButton.setOnClickListener {
+            newIncognitoTab()
+            dialog.dismiss()
+        }
+
+        closeAllTabsButton.setOnClickListener {
+            closeAllTabs()
+            dialog.dismiss()
+        }
+
+        selectTabsButton.setOnClickListener {
+            showMultiSelectTabsDialog()
+            dialog.dismiss()
+        }
+
+        clearDataButton.setOnClickListener {
+            showClearDataDialog()
+            dialog.dismiss()
+        }
+
+        settingsButton.setOnClickListener {
+            showSettings()
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun showMultiSelectTabsDialog() {
+        val tabTitles = tabs.map { it.title.takeIf { t -> t.isNotEmpty() } ?: "Новая вкладка" }.toTypedArray()
+        val selectedItems = BooleanArray(tabs.size) { false }
 
         AlertDialog.Builder(this)
-            .setTitle("Вкладки (${tabs.size})")
-            .setItems(tabItems) { _, which ->
+            .setTitle("Выбрать вкладки")
+            .setMultiChoiceItems(tabTitles, selectedItems) { _, which, isChecked ->
+                selectedItems[which] = isChecked
+            }
+            .setPositiveButton("Закрыть выбранные") { _, _ ->
+                val tabsToRemove = selectedItems.indices.filter { selectedItems[it] }.reversed()
+                tabsToRemove.forEach { index ->
+                    closeTab(index)
+                }
+                Toast.makeText(this, "Закрыто вкладок: ${tabsToRemove.size}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showClearDataDialog() {
+        val options = arrayOf("Очистить историю", "Очистить кэш", "Очистить cookies", "Очистить все данные")
+
+        AlertDialog.Builder(this)
+            .setTitle("Удалить данные браузера")
+            .setItems(options) { _, which ->
                 when (which) {
-                    0 -> newTab()
-                    1 -> newIncognitoTab()
-                    2 -> closeAllTabs()
-                    else -> {
-                        // Переключаемся на существующую вкладку
-                        val tabIndex = which - 3
-                        if (tabIndex in tabs.indices) {
-                            switchToTab(tabs[tabIndex].id)
-                        }
+                    0 -> clearHistory()
+                    1 -> clearCache()
+                    2 -> clearCookies()
+                    3 -> {
+                        clearHistory()
+                        clearCache()
+                        clearCookies()
+                        Toast.makeText(this, "Все данные очищены", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
             .setNegativeButton("Отмена", null)
             .show()
+    }
+
+    private fun closeTab(index: Int) {
+        if (tabs.size > 1 && index in tabs.indices) {
+            val removedTab = tabs.removeAt(index)
+            if (currentTabId == removedTab.id) {
+                currentTabId = tabs.last().id
+                switchToTab(currentTabId)
+            }
+            updateTabsCounter()
+        }
     }
 
     private fun newTab() {
@@ -360,7 +555,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun newIncognitoTab() {
-        Toast.makeText(this, "Режим инкогнито (скоро в v1.5.2)", Toast.LENGTH_SHORT).show()
+        val newTab = Tab(nextTabId++, "", "Новая вкладка инкогнито", true)
+        tabs.add(newTab)
+        currentTabId = newTab.id
+        showHomePageWithWidgets()
+        updateTabsCounter()
+        Toast.makeText(this, "Новая вкладка инкогнито создана", Toast.LENGTH_SHORT).show()
     }
 
     private fun closeAllTabs() {
@@ -386,17 +586,35 @@ class MainActivity : AppCompatActivity() {
         updateTabsCounter()
     }
 
+    private fun showSearchEngineSelection() {
+        val engines = searchEngines.keys.toTypedArray()
+        val currentEngine = getSelectedSearchEngine()
+
+        AlertDialog.Builder(this)
+            .setTitle("Выбор поисковой системы")
+            .setSingleChoiceItems(engines, engines.indexOf(currentEngine)) { dialog, which ->
+                prefs.edit { putString("search_engine", engines[which]) }
+                dialog.dismiss()
+                Toast.makeText(this, "Поисковая система изменена на: ${engines[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
     private fun showBrowserMenu() {
         val menuItems = arrayOf(
             "← Назад",
             "→ Вперед",
             "⟳ Обновить",
             "＋ Новая вкладка",
+            "🔍 Найти на странице",
+            "🌐 Перевести страницу",
+            "🔊 Озвучить страницу",
             "📚 История",
             "🔖 Закладки",
             "📤 Поделиться",
             "⚙️ Настройки",
-            "ℹ️ О программе v1.5.1"
+            "ℹ️ О программе v1.5.3"
         )
 
         AlertDialog.Builder(this)
@@ -407,14 +625,34 @@ class MainActivity : AppCompatActivity() {
                     1 -> goForward()
                     2 -> refresh()
                     3 -> newTab()
-                    4 -> showHistory()
-                    5 -> showBookmarks()
-                    6 -> sharePage()
-                    7 -> showSettings()
-                    8 -> showAbout()
+                    4 -> findOnPage()
+                    5 -> translatePage()
+                    6 -> speakPage()
+                    7 -> showHistory()
+                    8 -> showBookmarks()
+                    9 -> sharePage()
+                    10 -> showSettings()
+                    11 -> showAbout()
                 }
             }
             .show()
+    }
+
+    private fun findOnPage() {
+        Toast.makeText(this, "Поиск на странице (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun translatePage() {
+        val currentUrl = binding.webView.url ?: ""
+        if (currentUrl.isNotEmpty()) {
+            val translateUrl = "https://translate.google.com/translate?hl=ru&sl=auto&tl=ru&u=${URLEncoder.encode(currentUrl, "UTF-8")}"
+            binding.webView.loadUrl(translateUrl)
+            Toast.makeText(this, "Перевод страницы...", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun speakPage() {
+        Toast.makeText(this, "Озвучка страницы (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
     }
 
     private fun goBack() {
@@ -440,7 +678,48 @@ class MainActivity : AppCompatActivity() {
         binding.webView.reload()
     }
 
+    private fun showSettings() {
+        val settings = arrayOf(
+            "Поисковая система",
+            "Очистить кэш",
+            "Очистить историю",
+            "Очистить cookies",
+            "Режим инкогнито"
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle("Настройки v1.5.3")
+            .setItems(settings) { _, which ->
+                when (which) {
+                    0 -> showSearchEngineSelection()
+                    1 -> clearCache()
+                    2 -> clearHistory()
+                    3 -> clearCookies()
+                    4 -> toggleIncognitoMode()
+                }
+            }
+            .show()
+    }
+
+    private fun toggleIncognitoMode() {
+        val currentTab = getCurrentTab()
+        currentTab?.isIncognito = !(currentTab?.isIncognito ?: false)
+        Toast.makeText(this,
+            if (currentTab?.isIncognito == true) "Режим инкогнито активирован" else "Режим инкогнито выключен",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    // Остальные методы без изменений
+    // showHistory(), showBookmarks(), sharePage(), clearCache(), clearHistory(), clearCookies(),
+    // saveToHistory(), getHistory(), addBookmark(), getBookmarks(), showAbout()
+
     private fun showHistory() {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) {
+            Toast.makeText(this, "История недоступна в режиме инкогнито", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val history = getHistory()
         val urls = history.map { it.first }.toTypedArray()
 
@@ -459,6 +738,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showBookmarks() {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) {
+            Toast.makeText(this, "Закладки недоступны в режиме инкогнито", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val bookmarks = getBookmarks()
         val titles = bookmarks.map { it.first }.toTypedArray()
 
@@ -490,27 +775,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showSettings() {
-        val settings = arrayOf(
-            "Очистить кэш",
-            "Очистить историю",
-            "Очистить cookies",
-            "Режим инкогнито"
-        )
-
-        AlertDialog.Builder(this)
-            .setTitle("Настройки v1.5.1")
-            .setItems(settings) { _, which ->
-                when (which) {
-                    0 -> clearCache()
-                    1 -> clearHistory()
-                    2 -> clearCookies()
-                    3 -> incognitoMode()
-                }
-            }
-            .show()
-    }
-
     private fun clearCache() {
         binding.webView.clearCache(true)
         WebStorage.getInstance().deleteAllData()
@@ -518,6 +782,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearHistory() {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) {
+            Toast.makeText(this, "История недоступна в режиме инкогнито", Toast.LENGTH_SHORT).show()
+            return
+        }
         prefs.edit { remove("history") }
         Toast.makeText(this, R.string.history_cleared, Toast.LENGTH_SHORT).show()
     }
@@ -527,11 +796,10 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.cookies_cleared, Toast.LENGTH_SHORT).show()
     }
 
-    private fun incognitoMode() {
-        Toast.makeText(this, "Режим инкогнито (скоро в v1.5.2)", Toast.LENGTH_SHORT).show()
-    }
-
     private fun saveToHistory(url: String, title: String) {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) return
+
         prefs.edit {
             val history = prefs.getStringSet("history", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
             history.add("$title|$url|${System.currentTimeMillis()}")
@@ -540,6 +808,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getHistory(): List<Pair<String, String>> {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) return emptyList()
+
         return prefs.getStringSet("history", setOf())?.map {
             val parts = it.split("|")
             parts[1] to parts[0]
@@ -547,6 +818,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun addBookmark() {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) {
+            Toast.makeText(this, "Закладки недоступны в режиме инкогнито", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val url = binding.webView.url ?: return
         val title = binding.webView.title ?: "Без названия"
         prefs.edit {
@@ -558,6 +835,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getBookmarks(): List<Pair<String, String>> {
+        val currentTab = getCurrentTab()
+        if (currentTab?.isIncognito == true) return emptyList()
+
         return prefs.getStringSet("bookmarks", setOf())?.map {
             val parts = it.split("|")
             parts[0] to parts[1]
@@ -567,8 +847,172 @@ class MainActivity : AppCompatActivity() {
     private fun showAbout() {
         AlertDialog.Builder(this)
             .setTitle(R.string.about)
-            .setMessage("${getString(R.string.about_message)}\n\nВерсия 1.5.1 - Добавлена система вкладок")
+            .setMessage("${getString(R.string.about_message)}\n\nВерсия 1.5.3 - Добавлен выбор поисковой системы и улучшенное управление вкладками")
             .setPositiveButton("OK", null)
             .show()
+    }
+
+    // Методы для редактирования виджетов (без изменений из v1.5.2)
+    private fun showEditWidgetsDialog() {
+        val widgets = getWidgets().toMutableList()
+        val widgetNames = widgets.map { it.name }.toMutableList()
+
+        AlertDialog.Builder(this)
+            .setTitle("Редактирование виджетов (${widgets.size}/12)")
+            .setItems(widgetNames.toTypedArray()) { _, which ->
+                showWidgetOptionsDialog(widgets, which)
+            }
+            .setPositiveButton("Добавить виджет") { _, _ ->
+                showAddWidgetDialog(widgets)
+            }
+            .setNegativeButton("Сохранить") { _, _ ->
+                saveWidgets(widgets)
+                showHomePageWithWidgets()
+                Toast.makeText(this, "Виджеты сохранены", Toast.LENGTH_SHORT).show()
+            }
+            .setNeutralButton("Сбросить") { _, _ ->
+                showResetWidgetsConfirmation()
+            }
+            .show()
+    }
+
+    private fun showWidgetOptionsDialog(widgets: MutableList<Widget>, index: Int) {
+        val options = arrayOf("Редактировать", "Удалить", "Переместить вверх", "Переместить вниз")
+
+        AlertDialog.Builder(this)
+            .setTitle("Действие с \"${widgets[index].name}\"")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showEditWidgetDialog(widgets, index)
+                    1 -> showDeleteWidgetConfirmation(widgets, index)
+                    2 -> moveWidgetUp(widgets, index)
+                    3 -> moveWidgetDown(widgets, index)
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showEditWidgetDialog(widgets: MutableList<Widget>, index: Int) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_widget, null)
+        val nameEditText = dialogView.findViewById<EditText>(R.id.widgetNameEditText)
+        val urlEditText = dialogView.findViewById<EditText>(R.id.widgetUrlEditText)
+
+        val currentWidget = widgets[index]
+        nameEditText.setText(currentWidget.name)
+        urlEditText.setText(currentWidget.url)
+
+        AlertDialog.Builder(this)
+            .setTitle("Редактировать виджет")
+            .setView(dialogView)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val newName = nameEditText.text.toString().trim()
+                val newUrl = urlEditText.text.toString().trim()
+
+                if (newName.isNotEmpty() && newUrl.isNotEmpty()) {
+                    if (!newUrl.startsWith("http")) {
+                        Toast.makeText(this, "URL должен начинаться с http:// или https://", Toast.LENGTH_SHORT).show()
+                        return@setPositiveButton
+                    }
+
+                    widgets[index] = Widget(newName, newUrl, currentWidget.icon)
+                    saveWidgets(widgets)
+                    showEditWidgetsDialog()
+                    Toast.makeText(this, "Виджет обновлен", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showAddWidgetDialog(widgets: MutableList<Widget>) {
+        if (widgets.size >= 12) {
+            Toast.makeText(this, "Максимум 12 виджетов", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_widget, null)
+        val nameEditText = dialogView.findViewById<EditText>(R.id.widgetNameEditText)
+        val urlEditText = dialogView.findViewById<EditText>(R.id.widgetUrlEditText)
+
+        AlertDialog.Builder(this)
+            .setTitle("Добавить виджет")
+            .setView(dialogView)
+            .setPositiveButton("Добавить") { _, _ ->
+                val name = nameEditText.text.toString().trim()
+                val url = urlEditText.text.toString().trim()
+
+                if (name.isNotEmpty() && url.isNotEmpty()) {
+                    val fullUrl = if (!url.startsWith("http")) "https://$url" else url
+                    val icon = getSiteIconForUrl(fullUrl)
+                    widgets.add(Widget(name, fullUrl, icon))
+                    saveWidgets(widgets)
+                    showEditWidgetsDialog()
+                    Toast.makeText(this, "Виджет добавлен", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showDeleteWidgetConfirmation(widgets: MutableList<Widget>, index: Int) {
+        AlertDialog.Builder(this)
+            .setTitle("Удалить виджет?")
+            .setMessage("Вы уверены, что хотите удалить \"${widgets[index].name}\"?")
+            .setPositiveButton("Удалить") { _, _ ->
+                widgets.removeAt(index)
+                saveWidgets(widgets)
+                showEditWidgetsDialog()
+                Toast.makeText(this, "Виджет удален", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showResetWidgetsConfirmation() {
+        AlertDialog.Builder(this)
+            .setTitle("Сбросить виджеты?")
+            .setMessage("Вернуть виджеты к настройкам по умолчанию?")
+            .setPositiveButton("Сбросить") { _, _ ->
+                saveWidgets(defaultWidgets)
+                showHomePageWithWidgets()
+                Toast.makeText(this, "Виджеты сброшены", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun moveWidgetUp(widgets: MutableList<Widget>, index: Int) {
+        if (index > 0) {
+            Collections.swap(widgets, index, index - 1)
+            saveWidgets(widgets)
+            showEditWidgetsDialog()
+        }
+    }
+
+    private fun moveWidgetDown(widgets: MutableList<Widget>, index: Int) {
+        if (index < widgets.size - 1) {
+            Collections.swap(widgets, index, index + 1)
+            saveWidgets(widgets)
+            showEditWidgetsDialog()
+        }
+    }
+
+    private fun getSiteIconForUrl(url: String): String {
+        return when {
+            url.contains("google") -> "🔍"
+            url.contains("youtube") -> "📺"
+            url.contains("mail") || url.contains("gmail") -> "📧"
+            url.contains("vk") -> "👥"
+            url.contains("yandex") -> "🌐"
+            url.contains("twitter") -> "🐦"
+            url.contains("instagram") -> "📷"
+            url.contains("facebook") -> "👤"
+            url.contains("github") -> "💻"
+            url.contains("stackoverflow") -> "❓"
+            url.contains("reddit") -> "📱"
+            url.contains("wikipedia") -> "📚"
+            else -> "🌐"
+        }
     }
 }
