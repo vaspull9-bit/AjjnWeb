@@ -1,6 +1,4 @@
-// AjjnWeb v1.2.1
-// исправлен поиск гугл
-
+// AjjnWeb v1.5.0 - Добавляем виджеты на домашнюю страницу
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
@@ -8,7 +6,6 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.os.Bundle
-// import android.print.PrintManager
 import android.view.View
 import android.webkit.*
 import android.widget.Toast
@@ -18,16 +15,29 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 import com.example.ajjnweb.databinding.ActivityMainBinding
 import java.net.URLEncoder
-// import android.content.Context
 import android.view.inputmethod.InputMethodManager
 import androidx.core.content.edit
-import android.view.MotionEvent
-
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
+
+    // Популярные сайты для виджетов
+    private val popularSites = listOf(
+        "Google" to "https://www.google.com",
+        "YouTube" to "https://www.youtube.com",
+        "Gmail" to "https://mail.google.com",
+        "ВКонтакте" to "https://vk.com",
+        "Яндекс" to "https://yandex.ru",
+        "Twitter" to "https://twitter.com",
+        "Instagram" to "https://instagram.com",
+        "Facebook" to "https://facebook.com",
+        "GitHub" to "https://github.com",
+        "Stack Overflow" to "https://stackoverflow.com",
+        "Reddit" to "https://reddit.com",
+        "Wikipedia" to "https://wikipedia.org"
+    )
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,8 +48,8 @@ class MainActivity : AppCompatActivity() {
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
         setupWebView()
         setupClickListeners()
-        setupBackPressedHandler() // Добавляем обработчик назад
-        loadHomePage()
+        setupBackPressedHandler()
+        loadHomePageWithWidgets() // Загружаем виджеты вместо NY Times
     }
 
     private fun setupBackPressedHandler() {
@@ -48,14 +58,12 @@ class MainActivity : AppCompatActivity() {
                 if (binding.webView.canGoBack()) {
                     binding.webView.goBack()
                 } else {
-                    // Если нельзя идти назад в WebView, разрешаем стандартное поведение
                     isEnabled = false
                     onBackPressedDispatcher.onBackPressed()
                     isEnabled = true
                 }
             }
         }
-
         onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     }
 
@@ -117,7 +125,6 @@ class MainActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
 
-        // ПРОСТАЯ обработка ввода - никаких hint!
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
                 loadUrl()
@@ -127,7 +134,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // При клике просто фокусируем
         binding.urlEditText.setOnClickListener {
             binding.urlEditText.requestFocus()
         }
@@ -137,14 +143,15 @@ class MainActivity : AppCompatActivity() {
         var inputText = url ?: binding.urlEditText.text.toString().trim()
 
         if (inputText.isEmpty()) {
-            inputText = "https://www.nytimes.com"
+            showHomePageWithWidgets() // Показываем виджеты при пустом вводе
+            return
         }
 
         if (!inputText.startsWith("http://") && !inputText.startsWith("https://")) {
             inputText = if (inputText.contains(".")) {
                 "https://$inputText"
             } else {
-                "https://www.google.com/search?q=${java.net.URLEncoder.encode(inputText, "UTF-8")}"
+                "https://www.google.com/search?q=${URLEncoder.encode(inputText, "UTF-8")}"
             }
         }
 
@@ -156,6 +163,141 @@ class MainActivity : AppCompatActivity() {
         binding.urlEditText.clearFocus()
         val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(binding.urlEditText.windowToken, 0)
+    }
+
+    private fun showHomePageWithWidgets() {
+        // Создаем HTML страницу с виджетами популярных сайтов
+        val widgetsHtml = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        margin: 0; 
+                        padding: 20px; 
+                        background: #f0f0f0; 
+                    }
+                    .header { 
+                        text-align: center; 
+                        margin-bottom: 20px; 
+                        color: #333; 
+                    }
+                    .widgets-container {
+                        display: flex;
+                        flex-wrap: wrap;
+                        justify-content: center;
+                        gap: 15px;
+                        max-width: 1200px;
+                        margin: 0 auto;
+                    }
+                    .widget { 
+                        background: white; 
+                        width: 100px;
+                        height: 100px;
+                        border-radius: 12px; 
+                        text-align: center; 
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
+                        cursor: pointer; 
+                        transition: transform 0.2s;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        text-decoration: none;
+                        color: #333;
+                    }
+                    .widget:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    }
+                    .widget-icon { 
+                        font-size: 32px; 
+                        margin-bottom: 8px; 
+                    }
+                    .widget-title { 
+                        font-size: 12px; 
+                        font-weight: bold;
+                        padding: 0 5px;
+                    }
+                    .edit-widgets {
+                        text-align: center;
+                        margin-top: 20px;
+                    }
+                    .edit-btn {
+                        background: #4285f4;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 20px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h2>Часто посещаемые сайты</h2>
+                </div>
+                
+                <div class="widgets-container">
+                    ${createWidgetsHtml()}
+                </div>
+                
+                <div class="edit-widgets">
+                    <button class="edit-btn" onclick="editWidgets()">Редактировать виджеты</button>
+                </div>
+
+                <script>
+                    function openSite(url) {
+                        window.location.href = url;
+                    }
+                    
+                    function editWidgets() {
+                        alert('Редактирование виджетов будет доступно в следующем обновлении');
+                    }
+                    
+                    // Сохраняем частоту посещений
+                    function trackVisit(url) {
+                        localStorage.setItem('visit_' + url, Date.now());
+                    }
+                </script>
+            </body>
+            </html>
+        """.trimIndent()
+
+        binding.webView.loadDataWithBaseURL(null, widgetsHtml, "text/html", "UTF-8", null)
+    }
+
+    private fun createWidgetsHtml(): String {
+        return popularSites.joinToString("") { (name, url) ->
+            """
+            <a class="widget" href="$url" onclick="trackVisit('$url')">
+                <div class="widget-icon">${getSiteIcon(name)}</div>
+                <div class="widget-title">$name</div>
+            </a>
+            """
+        }
+    }
+
+    private fun getSiteIcon(siteName: String): String {
+        return when (siteName) {
+            "Google" -> "🔍"
+            "YouTube" -> "📺"
+            "Gmail" -> "📧"
+            "ВКонтакте" -> "👥"
+            "Яндекс" -> "🌐"
+            "Twitter" -> "🐦"
+            "Instagram" -> "📷"
+            "Facebook" -> "👤"
+            "GitHub" -> "💻"
+            "Stack Overflow" -> "❓"
+            "Reddit" -> "📱"
+            "Wikipedia" -> "📚"
+            else -> "🌐"
+        }
     }
 
     private fun showBrowserMenu() {
@@ -172,7 +314,7 @@ class MainActivity : AppCompatActivity() {
         )
 
         AlertDialog.Builder(this)
-            .setTitle("Меню браузера")
+            .setTitle("Меню браузера v1.5.0")
             .setItems(menuItems) { _, which ->
                 when (which) {
                     0 -> goBack()
@@ -193,7 +335,7 @@ class MainActivity : AppCompatActivity() {
         if (binding.webView.canGoBack()) {
             binding.webView.goBack()
         } else {
-            Toast.makeText(this, "Нельзя вернуться назад", Toast.LENGTH_SHORT).show()
+            showHomePageWithWidgets() // Возвращаемся к виджетам при нажатии назад на домашней странице
         }
     }
 
@@ -211,7 +353,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun newTab() {
         Toast.makeText(this, "Новая вкладка", Toast.LENGTH_SHORT).show()
-        loadUrl("https://www.nytimes.com")
+        showHomePageWithWidgets()
     }
 
     private fun showHistory() {
@@ -264,10 +406,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun findOnPage() {
-        Toast.makeText(this, "Поиск на странице", Toast.LENGTH_SHORT).show()
-    }
-
     private fun showSettings() {
         val settings = arrayOf(
             "Очистить кэш",
@@ -306,7 +444,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun incognitoMode() {
-        Toast.makeText(this, "Режим инкогнито", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Режим инкогнито (скоро)", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveToHistory(url: String, title: String) {
@@ -350,7 +488,7 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun loadHomePage() {
-        loadUrl("https://www.nytimes.com")
+    private fun loadHomePageWithWidgets() {
+        showHomePageWithWidgets()
     }
 }
