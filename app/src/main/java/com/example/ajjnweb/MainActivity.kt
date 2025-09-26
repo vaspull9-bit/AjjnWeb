@@ -235,7 +235,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupClickListeners() {
         binding.menuButton.setOnClickListener { showBrowserMenu() }
         binding.tabsCounterButton.setOnClickListener { showAdvancedTabsOverview() }
-
+        binding.homeButton.setOnClickListener { goHome() } // ДОБАВИТЬ эту строку
         binding.urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_GO) {
                 loadUrl()
@@ -248,6 +248,12 @@ class MainActivity : AppCompatActivity() {
         binding.urlEditText.setOnClickListener {
             binding.urlEditText.requestFocus()
         }
+    }
+
+    // Кнопка идти домой
+    private fun goHome() {
+        newTab() // Создаем новую вкладку вместо замены текущей
+        Toast.makeText(this, "Новая вкладка с виджетами", Toast.LENGTH_SHORT).show()
     }
 
     private fun updateTabsCounter() {
@@ -614,7 +620,7 @@ class MainActivity : AppCompatActivity() {
             "🔖 Закладки",
             "📤 Поделиться",
             "⚙️ Настройки",
-            "ℹ️ О программе v1.5.3"
+            "ℹ️ О программе"
         )
 
         AlertDialog.Builder(this)
@@ -637,10 +643,30 @@ class MainActivity : AppCompatActivity() {
             }
             .show()
     }
-
+// Поиск
     private fun findOnPage() {
-        Toast.makeText(this, "Поиск на странице (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
+        // Временная реализация - просто показываем диалог
+        val dialogView = layoutInflater.inflate(R.layout.dialog_find_on_page, null)
+        val searchEditText = dialogView.findViewById<EditText>(R.id.searchEditText)
+
+        AlertDialog.Builder(this)
+            .setTitle("Найти на странице")
+            .setView(dialogView)
+            .setPositiveButton("Найти") { _, _ ->
+                val query = searchEditText.text.toString()
+                if (query.isNotEmpty()) {
+                    binding.webView.findAllAsync(query)
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
+
+
+    private fun speakPage() {
+        Toast.makeText(this, "Озвучка страницы (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
+    }
+
 
     private fun translatePage() {
         val currentUrl = binding.webView.url ?: ""
@@ -651,9 +677,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun speakPage() {
-        Toast.makeText(this, "Озвучка страницы (скоро в v1.5.4)", Toast.LENGTH_SHORT).show()
-    }
+
 
     private fun goBack() {
         if (binding.webView.canGoBack()) {
@@ -844,13 +868,7 @@ class MainActivity : AppCompatActivity() {
         } ?: emptyList()
     }
 
-    private fun showAbout() {
-        AlertDialog.Builder(this)
-            .setTitle(R.string.about)
-            .setMessage("${getString(R.string.about_message)}\n\nВерсия 1.5.3 - Добавлен выбор поисковой системы и улучшенное управление вкладками")
-            .setPositiveButton("OK", null)
-            .show()
-    }
+
 
     // Методы для редактирования виджетов (без изменений из v1.5.2)
     private fun showEditWidgetsDialog() {
@@ -1014,5 +1032,13 @@ class MainActivity : AppCompatActivity() {
             url.contains("wikipedia") -> "📚"
             else -> "🌐"
         }
+    }
+
+    private fun showAbout() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.about)
+            .setMessage("${getString(R.string.about_message)}\n\nВерсия AjjnWeb v1.5.5 - Добавлен выбор поисковой системы и улучшенное управление вкладками")
+            .setPositiveButton("OK", null)
+            .show()
     }
 }
