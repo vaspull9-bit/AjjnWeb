@@ -1,4 +1,4 @@
-// AjjnWeb v1.6.1 - Исправлены режим ПК
+// AjjnWeb v1.6.2 - нет режима Десктоп
 package com.example.ajjnweb
 
 import android.annotation.SuppressLint
@@ -84,13 +84,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textToSpeech: TextToSpeech
     private var isSpeaking = false
 
-    private var isDesktopMode = false
 
     private var speechPlayerView: View? = null
     private var currentSpeechText = ""
     private var currentSpeechPosition = 0
 
-    private var lastDesktopModeToggle = 0L
+
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -109,7 +108,6 @@ class MainActivity : AppCompatActivity() {
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
         // ИСПРАВЛЯЕМ: по умолчанию мобильный режим
-        isDesktopMode = prefs.getBoolean("desktop_mode", false)
         setupTextToSpeech()
         setupWebView()
         setupClickListeners()
@@ -261,12 +259,6 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
 
-            // ПРОСТОЙ desktop mode БЕЗ лишних JavaScript
-            if (isDesktopMode) {
-                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            } else {
-                userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36"
-            }
         }
 
         webView.addJavascriptInterface(JavaScriptInterface(), "Android")
@@ -282,10 +274,7 @@ class MainActivity : AppCompatActivity() {
                     it.title = view?.title ?: "Без названия"
                 }
 
-                // ДОБАВИТЬ: применяем desktop viewport только для НЕ домашних страниц
-                if (isDesktopMode && url != null && !url.contains("data:text/html")) {
-                    applyDesktopViewport()
-                }
+
 
                 if (!currentTab?.isIncognito!!) {
                     saveToHistory(url ?: "", view?.title ?: "")
@@ -401,29 +390,18 @@ class MainActivity : AppCompatActivity() {
         """
         }
 
-        // ИСПРАВЛЯЕМ условные выражения
-        val viewportWidth = if (isDesktopMode) "1200" else "device-width"
-        val bodyStyle = if (isDesktopMode) "min-width: 1200px;" else ""
-        val containerWidth = if (isDesktopMode) "1200px" else "100%"
-        val widgetWidth = if (isDesktopMode) "120px" else "100px"
-        val widgetHeight = if (isDesktopMode) "120px" else "100px"
-        val iconSize = if (isDesktopMode) "40px" else "32px"
-        val titleSize = if (isDesktopMode) "14px" else "12px"
-        val desktopModeJs = if (isDesktopMode) "true" else "false"
-
         return """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=$viewportWidth, initial-scale=1.0">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
                 body { 
                     font-family: Arial, sans-serif; 
                     margin: 0; 
                     padding: 20px; 
                     background: #f0f0f0; 
-                    $bodyStyle
                 }
                 .header { 
                     text-align: center; 
@@ -435,13 +413,13 @@ class MainActivity : AppCompatActivity() {
                     flex-wrap: wrap;
                     justify-content: center;
                     gap: 15px;
-                    max-width: $containerWidth;
+                    max-width: 100%;
                     margin: 0 auto;
                 }
                 .widget { 
                     background: white; 
-                    width: $widgetWidth;
-                    height: $widgetHeight;
+                    width: 100px;
+                    height: 100px;
                     border-radius: 12px; 
                     text-align: center; 
                     box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
@@ -453,18 +431,17 @@ class MainActivity : AppCompatActivity() {
                     align-items: center;
                     text-decoration: none;
                     color: #333;
-                    flex-shrink: 0;
                 }
                 .widget:hover {
                     transform: translateY(-2px);
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 }
                 .widget-icon { 
-                    font-size: $iconSize; 
+                    font-size: 32px; 
                     margin-bottom: 8px; 
                 }
                 .widget-title { 
-                    font-size: $titleSize; 
+                    font-size: 12px; 
                     font-weight: bold;
                     padding: 0 5px;
                 }
@@ -506,16 +483,6 @@ class MainActivity : AppCompatActivity() {
                     if (window.Android) {
                         window.Android.editWidgets();
                     }
-                }
-                
-                // Предотвращаем масштабирование на desktop
-                if ($desktopModeJs) {
-                    document.addEventListener('gesturestart', function (e) {
-                        e.preventDefault();
-                    });
-                    document.addEventListener('touchmove', function (e) {
-                        if (e.scale !== 1) { e.preventDefault(); }
-                    }, { passive: false });
                 }
             </script>
         </body>
@@ -737,7 +704,6 @@ class MainActivity : AppCompatActivity() {
             "→ Вперед",
             "⟳ Обновить",
             "＋ Новая вкладка",
-            "🖥️ Версия для ПК: ${if (isDesktopMode) "Вкл" else "Выкл"}",
             "🔍 Найти на странице",
             "🌐 Перевести страницу",
             "🔊 Озвучить страницу",
@@ -756,76 +722,19 @@ class MainActivity : AppCompatActivity() {
                     1 -> goForward()
                     2 -> refresh()
                     3 -> newTab()
-                    4 -> toggleDesktopMode() // ДОБАВИТЬ эту строку
-                    5 -> findOnPage()
-                    6 -> translatePage()
-                    7 -> speakPage()
-                    8 -> showHistory()
-                    9 -> showBookmarks()
-                    10 -> sharePage()
-                    11 -> showSettings()
-                    12 -> showAbout()
+                    4 -> findOnPage()
+                    5 -> translatePage()
+                    6 -> speakPage()
+                    7 -> showHistory()
+                    8 -> showBookmarks()
+                    9 -> sharePage()
+                    10 -> showSettings()
+                    11 -> showAbout()
                 }
             }
             .show()
     }
 
-
-// Версия для ПК
-private fun toggleDesktopMode() {
-    val newDesktopMode = !isDesktopMode
-    prefs.edit { putBoolean("desktop_mode", newDesktopMode) }
-
-    // ПРЕДОТВРАЩАЕМ многократные быстрые нажатия
-    if (isDesktopMode == newDesktopMode) return
-
-    isDesktopMode = newDesktopMode
-
-    // ПРИМЕНЯЕМ НАСТРОЙКИ БЕЗ НЕМЕДЛЕННОЙ ПЕРЕЗАГРУЗКИ
-    setupWebView()
-
-    val currentUrl = binding.webView.url
-    val isHomePage = currentUrl == null || currentUrl.isEmpty() || currentUrl.contains("data:text/html")
-
-    if (!isHomePage) {
-        // Добавляем задержку для стабильности
-        binding.webView.postDelayed({
-            binding.webView.reload()
-        }, 300)
-    }
-
-    showDesktopModeConfirmation()
-}
-
-    private fun showDesktopModeConfirmation() {
-        // Показываем диалог вместо Toast для лучшего UX
-        AlertDialog.Builder(this)
-            .setTitle("Режим отображения")
-            .setMessage("Версия для ПК: ${if (isDesktopMode) "ВКЛЮЧЕНА\n\nСтраница будет перезагружена" else "ВЫКЛЮЧЕНА\n\nСтраница будет перезагружена"}")
-            .setPositiveButton("OK") { _, _ ->
-                // Подтверждение получено
-            }
-            .show()
-    }
-    // ДОБАВИТЬ новый метод
-    private fun applyDesktopViewport() {
-        if (isDesktopMode) {
-            binding.webView.evaluateJavascript("""
-            (function() {
-                var viewport = document.querySelector('meta[name="viewport"]');
-                if (!viewport) {
-                    viewport = document.createElement('meta');
-                    viewport.name = 'viewport';
-                    document.getElementsByTagName('head')[0].appendChild(viewport);
-                }
-                viewport.content = 'width=1200, initial-scale=1.0';
-                
-                // Также пробуем изменить ширину body
-                document.body.style.minWidth = '1200px';
-            })();
-        """, null)
-        }
-    }
 
 
 
@@ -1039,7 +948,6 @@ private fun toggleDesktopMode() {
     private fun showSettings() {
         val settings = arrayOf(
             "Поисковая система",
-            "Режим для ПК", // НОВОЕ - без статуса
             "Очистить кэш",
             "Очистить историю",
             "Очистить cookies",
@@ -1051,51 +959,15 @@ private fun toggleDesktopMode() {
             .setItems(settings) { _, which ->
                 when (which) {
                     0 -> showSearchEngineSelection()
-                    1 -> showDesktopModeDialog() // НОВОЕ - диалог с выбором
-                    2 -> clearCache()
-                    3 -> clearHistory()
-                    4 -> clearCookies()
-                    5 -> toggleIncognitoMode()
+                    1 -> clearCache()
+                    2 -> clearHistory()
+                    3 -> clearCookies()
+                    4 -> toggleIncognitoMode()
                 }
             }
             .show()
     }
 
-    // ДОБАВЛЯЕМ новый метод для выбора режима
-    private fun showDesktopModeDialog() {
-        // ЗАЩИТА ОТ СПАМА КНОПКОЙ
-        if (System.currentTimeMillis() - lastDesktopModeToggle < 2000) {
-            Toast.makeText(this, "Подождите перед следующим изменением", Toast.LENGTH_SHORT).show()
-            return
-        }
-        lastDesktopModeToggle = System.currentTimeMillis()
-
-        val options = arrayOf("Мобильный режим", "Режим для ПК")
-
-        AlertDialog.Builder(this)
-            .setTitle("Выберите режим отображения")
-            .setSingleChoiceItems(options, if (isDesktopMode) 1 else 0) { dialog, which ->
-                val newMode = which == 1
-                if (isDesktopMode != newMode) {
-                    isDesktopMode = newMode
-                    prefs.edit { putBoolean("desktop_mode", isDesktopMode) }
-                    setupWebView()
-
-                    // УВЕЛИЧИВАЕМ ЗАДЕРЖКУ ДЛЯ СТАБИЛЬНОСТИ
-                    binding.webView.postDelayed({
-                        val currentUrl = binding.webView.url
-                        if (currentUrl != null && !currentUrl.contains("data:text/html")) {
-                            binding.webView.reload()
-                        } else {
-                            showHomePageWithWidgets()
-                        }
-                    }, 1000) // Увеличиваем задержку до 1 секунды
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
 
     private fun toggleIncognitoMode() {
         val currentTab = getCurrentTab()
@@ -1420,38 +1292,28 @@ private fun toggleDesktopMode() {
     }
 
     private fun applyIncognitoTheme() {
-        // ПРИМЕНЯЕМ ЧЕРНУЮ ТЕМУ
         binding.root.setBackgroundColor(Color.BLACK)
-
-        // Тулбар - темно-серый
         val toolbarColor = Color.parseColor("#2D2D2D")
+
         binding.urlEditText.setBackgroundColor(toolbarColor)
         binding.urlEditText.setTextColor(Color.WHITE)
 
-        // Кнопки - ЯРКИЕ ИКОНКИ ДЛЯ ЛУЧШЕЙ ВИДИМОСТИ
         binding.tabsCounterButton.setBackgroundColor(toolbarColor)
         binding.tabsCounterButton.setTextColor(Color.WHITE)
 
+        // ЯРКИЕ БЕЛЫЕ ИКОНКИ ДЛЯ ЛУЧШЕЙ ВИДИМОСТИ
         binding.homeButton.setColorFilter(Color.WHITE)
         binding.menuButton.setColorFilter(Color.WHITE)
 
-
-        // Явно увеличиваем контрастность
+        // УВЕЛИЧИВАЕМ КОНТРАСТНОСТЬ
         binding.homeButton.alpha = 1.0f
         binding.menuButton.alpha = 1.0f
 
-//        // Статус-бар - ИСПРАВЛЯЕМ deprecated
-//        window.statusBarColor = Color.BLACK
-//        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
-//                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        // ДОБАВЛЯЕМ ТОНКУЮ БЕЛУЮ ОБВОДКУ
+        binding.homeButton.setBackgroundResource(android.R.drawable.btn_default)
+        binding.menuButton.setBackgroundResource(android.R.drawable.btn_default)
 
-        // Добавляем тонкую обводку для лучшей видимости
-        binding.homeButton.setBackgroundColor(Color.TRANSPARENT)
-        binding.menuButton.setBackgroundColor(Color.TRANSPARENT)
-
-        // Прогресс-бар
         binding.progressBar.progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-        binding.progressBar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.DKGRAY)
     }
 
     private fun applyNormalTheme() {
@@ -1471,7 +1333,7 @@ private fun toggleDesktopMode() {
     private fun showAbout() {
         AlertDialog.Builder(this)
             .setTitle(R.string.about)
-            .setMessage("${getString(R.string.about_message)}\n\nВерсия AjjnWeb v1.6.1. Стабильные режимы отображения")
+            .setMessage("${getString(R.string.about_message)}\n\nВерсия AjjnWeb v1.6.2. Стабильные режимы отображения")
             .setPositiveButton("OK", null)
             .show()
     }
